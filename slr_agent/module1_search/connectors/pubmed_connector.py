@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 Entrez.email = "your_email@example.com"
 
 
-def search_pubmed(query, retmax=200):
+def search_pubmed(query, retmax=2000):
     """
     Search PubMed and return a list of PubMed IDs
     """
@@ -82,6 +82,6 @@ def fetch_pubmed_details(id_list):
     return papers
 
 
-def search(query, retmax=200):
+def search(query, retmax=2000):
     ids = search_pubmed(query, retmax)
     return fetch_pubmed_details(ids)

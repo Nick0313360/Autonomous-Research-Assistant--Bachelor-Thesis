@@ -1,23 +1,16 @@
-"""
-Semantic Scholar Connector
---------------------------
-Uses the Semantic Scholar REST API.
-
-Supports pagination to collect hundreds of papers.
-"""
-
+import os
 import requests
 import time
+from dotenv import load_dotenv
+
+load_dotenv()
+
+API_KEY = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
 
 URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 
-API_KEY = "YOUR_API_KEY"
-
 
 def search(query, limit=300):
-    """
-    Search Semantic Scholar using pagination.
-    """
 
     papers = []
 
@@ -33,12 +26,14 @@ def search(query, limit=300):
             "fields": "title,abstract,year,citationCount,openAccessPdf,externalIds"
         }
 
-        headers = {"x-api-key": API_KEY}
+        headers = {
+            "x-api-key": API_KEY
+        }
 
         r = requests.get(URL, params=params, headers=headers)
 
         if r.status_code == 429:
-            print("Rate limit reached — waiting 10 seconds")
+            print("Rate limit hit. Waiting 10 seconds.")
             time.sleep(10)
             continue
 

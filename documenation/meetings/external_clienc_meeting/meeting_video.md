@@ -1,0 +1,1 @@
+https://bernerfachhochschule-my.sharepoint.com/:v:/g/personal/golon2_bfh_ch/IQCxSvNsfMddS4teQC4w5L73AQ-nLp7-Fcp2m4WoiqWde-c?nav=eyJyZWZlcnJhbEluZm8iOnsicmVmZXJyYWxBcHAiOiJPbmVEcml2ZUZvckJ1c2luZXNzIiwicmVmZXJyYWxBcHBQbGF0Zm9ybSI6IldlYiIsInJlZmVycmFsTW9kZSI6InZpZXciLCJyZWZlcnJhbFZpZXciOiJNeUZpbGVzTGlua0NvcHkifX0&email=souhir.bensouissi%40bfh.ch&e=8hrXn3

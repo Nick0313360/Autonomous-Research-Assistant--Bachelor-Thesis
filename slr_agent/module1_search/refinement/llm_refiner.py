@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 client = OpenAI(
+    base_url='https://inference.mlmp.ti.bfh.ch/api/v1',
     api_key=os.getenv("OPENAI_API_KEY")
 )
 
@@ -80,7 +81,7 @@ Return ONLY a comma separated list.
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-oss:120b",
         temperature=0.2,
         messages=[
             {"role": "system", "content": "You are a systematic review search expert."},

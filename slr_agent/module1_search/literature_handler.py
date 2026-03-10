@@ -21,7 +21,7 @@ from refinement.llm_refiner import analyse_query_gaps, expand_query
 # Helper functions
 # -------------------------------------
 
-def run_basic_search(query, pubmed_limit=50, semantic_limit=3000):
+def run_basic_search(query, pubmed_limit=200, semantic_limit=10):
     """
     Basic search: query both databases, merge, deduplicate, print stats
     """

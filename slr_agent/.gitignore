@@ -1,0 +1,10 @@
+.env
+outputs/
+logs/
+test.pdf
+*.pdf
+__pycache__/
+.DS_Store
+../.DS_Store
+venv/
+.env

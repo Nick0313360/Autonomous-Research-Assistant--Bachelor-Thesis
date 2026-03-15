@@ -1,27 +1,10 @@
-"""
-Module 1 — Main Handler
------------------------
-
-Two modes:
-1. Basic search (AI off)
-2. Iterative refinement with LLM (AI on)
-
-Usage:
-python literature_handler.py         # Basic search
-python literature_handler.py --ai    # Run with AI refinement
-"""
-
 import argparse
 from connectors.pubmed_connector import search as pubmed_search
 from connectors.semantic_connector import search as semantic_search
 from deduplicator.deduplicator import deduplicate
 from refinement.llm_refiner import analyse_query_gaps, expand_query
 
-# -------------------------------------
-# Helper functions
-# -------------------------------------
-
-def run_basic_search(query, pubmed_limit=200, semantic_limit=10):
+def run_basic_search(query, pubmed_limit=1, semantic_limit=50):
     """
     Basic search: query both databases, merge, deduplicate, print stats
     """
@@ -42,7 +25,6 @@ def run_basic_search(query, pubmed_limit=200, semantic_limit=10):
     print(f"Total unique papers: {len(unique)}\n")
     
     return unique
-
 
 def run_iterative_search(initial_query, max_iterations=3):
     """
@@ -73,7 +55,6 @@ def run_iterative_search(initial_query, max_iterations=3):
     
     return all_papers
 
-
 def main():
     parser = argparse.ArgumentParser(description="Module 1 Literature Search Handler")
     parser.add_argument("--ai", action="store_true", help="Enable iterative LLM refinement")
@@ -93,7 +74,6 @@ def main():
     print(f"Total unique papers collected: {len(papers)}\n")
     for i, p in enumerate(papers[:10], 1):
         print(f"{i}) {p['title']} ({p['source']})")
-
 
 if __name__ == "__main__":
     main()

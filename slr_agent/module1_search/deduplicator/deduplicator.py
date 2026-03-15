@@ -1,14 +1,3 @@
-"""
-Deduplication Engine
---------------------
-Removes duplicates in two stages:
-
-1. DOI match (exact match)
-2. Fuzzy title similarity (RapidFuzz)
-
-Logs all removed duplicates for PRISMA reporting.
-"""
-
 from rapidfuzz import fuzz
 
 

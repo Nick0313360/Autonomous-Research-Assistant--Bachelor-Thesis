@@ -9,54 +9,61 @@ API_KEY = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
 
 URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 
-
-def search(query, limit=300):
-
+def search(query, limit=500):
     papers = []
-
     batch_size = 100
     offset = 0
-
+    
+    print(f"🔍 Searching Semantic Scholar for: {query}")
+    
     while offset < limit:
-
         params = {
             "query": query,
-            "limit": batch_size,
+            "limit": min(batch_size, limit - offset),
             "offset": offset,
-            "fields": "title,abstract,year,citationCount,openAccessPdf,externalIds"
+            "fields": "title,abstract,year,citationCount,externalIds"
         }
-
-        headers = {
-            "x-api-key": API_KEY
-        }
-
-        r = requests.get(URL, params=params, headers=headers)
-
-        if r.status_code == 429:
-            print("Rate limit hit. Waiting 10 seconds.")
-            time.sleep(10)
-            continue
-
-        if r.status_code != 200:
-            print("Semantic Scholar error:", r.status_code)
+        
+        # This header format works with your key
+        headers = {"api-key": API_KEY}
+        
+        try:
+            r = requests.get(URL, params=params, headers=headers, timeout=15)
+            
+            if r.status_code == 200:
+                data = r.json()
+                
+                for p in data.get("data", []):
+                    if p.get("title"):
+                        papers.append({
+                            "title": p.get("title"),
+                            "abstract": p.get("abstract"),
+                            "doi": p.get("externalIds", {}).get("DOI"),
+                            "year": p.get("year"),
+                            "citation_count": p.get("citationCount"),
+                            "source": "semantic_scholar"
+                        })
+                
+                print(f"   ✓ Got {len(data.get('data', []))} papers")
+                
+                if len(data.get("data", [])) < batch_size:
+                    break
+                    
+            elif r.status_code == 429:
+                print(f"   ⏳ Rate limit hit. Waiting 2 seconds...")
+                time.sleep(2)
+                continue
+                
+            else:
+                print(f"   ❌ Error {r.status_code}")
+                break
+            
+            offset += batch_size
+            time.sleep(1)  # Critical: 1 second between requests
+            
+        except Exception as e:
+            print(f"   ❌ Error: {e}")
             break
-
-        data = r.json()
-
-        for p in data.get("data", []):
-
-            doi = None
-            if p.get("externalIds"):
-                doi = p["externalIds"].get("DOI")
-
-            papers.append({
-                "title": p.get("title"),
-                "abstract": p.get("abstract"),
-                "doi": doi,
-                "source": "semantic_scholar"
-            })
-
-        offset += batch_size
-        time.sleep(1)
-
+    
+    print(f"✅ Found {len(papers)} papers")
     return papers

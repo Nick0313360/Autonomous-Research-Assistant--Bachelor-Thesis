@@ -1,13 +1,3 @@
-"""
-MODULE 2 — Screening Agent
-===========================
-Sub-stage 2A — Title / Abstract screening
-Sub-stage 2B — Full-text screening (Unpaywall + pdfminer)
-
-Input  : list of paper dicts from Module 1
-Output : filtered list + PRISMA statistics + per-paper decision log
-"""
-
 import io
 import json
 import logging

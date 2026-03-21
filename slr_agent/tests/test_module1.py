@@ -16,10 +16,10 @@ import pytest
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from search_query import SearchQuery, QueryBuilder
-from llm_refiner import _is_domain_relevant, expand_query, RefinementResult
-from deduplicator import deduplicate, _normalise_doi
-from literature_handler import _paper_key, _paper_keys
+from slr_agent.module1_search.services.search_query import SearchQuery, QueryBuilder
+from slr_agent.services.llm_refiner import _is_domain_relevant, expand_query, RefinementResult
+from slr_agent.module1_search.services.deduplicator import deduplicate, _normalise_doi
+from slr_agent.module1_search.services.literature_handler import _paper_key, _paper_keys
 
 
 # ============================================================

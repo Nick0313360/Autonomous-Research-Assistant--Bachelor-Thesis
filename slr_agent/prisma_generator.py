@@ -1,0 +1,146 @@
+"""
+prisma_generator.py — PRISMA 2020 Flow Diagram
+================================================
+Generates a publication-quality PRISMA flow diagram as a PNG file.
+Called from pipeline.py _build_summary() after all modules complete.
+
+Requires: pip install matplotlib
+"""
+
+import os
+import logging
+
+log = logging.getLogger(__name__)
+
+
+def generate_prisma_diagram(prisma_counts: dict, output_path: str) -> str:
+    """
+    Generate a PRISMA 2020 flow diagram PNG.
+    Returns the output_path on success, None on failure.
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')   # non-interactive — no display needed
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import FancyBboxPatch
+    except ImportError:
+        log.warning("matplotlib not installed — skipping PRISMA diagram. pip install matplotlib")
+        return None
+
+    p = prisma_counts
+    identified   = p.get('identified', 0)
+    screened     = p.get('screened', 0)
+    excluded_ta  = p.get('excluded_ta', 0)
+    uncertain    = p.get('uncertain', 0)
+    fulltext     = p.get('sent_to_fulltext', 0)
+    no_pdf       = p.get('no_pdf', 0)
+    excluded_ft  = p.get('excluded_ft', 0)
+    included     = p.get('included', 0)
+    extracted    = p.get('extracted', 0)
+
+    BG      = '#f8f9fa'
+    BLUE    = '#2980b9'
+    GREEN   = '#27ae60'
+    RED     = '#c0392b'
+    DARK    = '#2c3e50'
+    BOX_BLU = '#d6eaf8'
+    BOX_GRN = '#d5f5e3'
+    BOX_RED = '#fadbd8'
+    BOX_DRK = '#d0f0c0'
+
+    fig, ax = plt.subplots(figsize=(11, 15))
+    ax.set_xlim(0, 11); ax.set_ylim(0, 15)
+    ax.axis('off')
+    ax.set_facecolor(BG)
+    fig.patch.set_facecolor(BG)
+
+    def box(x, y, w, h, text, bg='white', border=DARK, fs=8.5):
+        rect = FancyBboxPatch((x, y), w, h,
+                              boxstyle="round,pad=0.12",
+                              facecolor=bg, edgecolor=border, linewidth=1.5,
+                              zorder=2)
+        ax.add_patch(rect)
+        ax.text(x + w/2, y + h/2, text,
+                ha='center', va='center', fontsize=fs,
+                color=DARK, fontweight='bold', multialignment='center',
+                zorder=3)
+
+    def arrow_down(x, y_from, y_to, color=DARK):
+        ax.annotate('', xy=(x, y_to + 0.02), xytext=(x, y_from),
+                    arrowprops=dict(arrowstyle='->', color=color, lw=1.8),
+                    zorder=1)
+
+    def arrow_right(x_from, x_to, y, color=RED):
+        ax.annotate('', xy=(x_from, y), xytext=(x_to, y),
+                    arrowprops=dict(arrowstyle='->', color=color, lw=1.5),
+                    zorder=1)
+
+    def section_label(y, text, color=BLUE):
+        ax.text(0.2, y + 0.6, text,
+                ha='center', va='center', fontsize=7,
+                color=color, rotation=90, fontweight='bold')
+
+    # ── Title ───────────────────────────────────────────────────────────────
+    ax.text(5.5, 14.5, 'PRISMA 2020 Flow Diagram',
+            ha='center', va='center', fontsize=13,
+            fontweight='bold', color=DARK)
+
+    # ── Identification ──────────────────────────────────────────────────────
+    box(0.8, 12.2, 4.5, 1.5,
+        f'Records identified\nPubMed + Semantic Scholar\n(n = {identified:,})',
+        bg=BOX_BLU)
+    section_label(12.2, 'IDENTIFICATION', BLUE)
+    arrow_down(3.05, 12.2, 10.7)
+
+    # ── Screening ───────────────────────────────────────────────────────────
+    box(0.8, 9.2, 4.5, 1.5,
+        f'Records screened\n(title / abstract)\n(n = {screened:,})',
+        bg=BOX_GRN)
+    section_label(9.2, 'SCREENING', GREEN)
+
+    # Excluded right arrow + box
+    arrow_right(5.3, 5.8, 9.95, RED)
+    box(5.8, 9.2, 4.8, 1.5,
+        f'Excluded at title/abstract\n(n = {excluded_ta:,})\n'
+        f'Uncertain → human review (n = {uncertain:,})',
+        bg=BOX_RED, border=RED)
+
+    arrow_down(3.05, 9.2, 7.7)
+
+    # ── Eligibility ─────────────────────────────────────────────────────────
+    box(0.8, 6.2, 4.5, 1.5,
+        f'Full-text assessed\nfor eligibility\n(n = {fulltext:,})',
+        bg=BOX_GRN)
+    section_label(6.2, 'ELIGIBILITY', GREEN)
+
+    arrow_right(5.3, 5.8, 6.95, RED)
+    box(5.8, 6.2, 4.8, 1.5,
+        f'Excluded at full-text (n = {excluded_ta + excluded_ft:,})\n'
+        f'No open-access PDF: {no_pdf:,}\n'
+        f'Not eligible: {excluded_ft:,}',
+        bg=BOX_RED, border=RED)
+
+    arrow_down(3.05, 6.2, 4.7)
+
+    # ── Inclusion ───────────────────────────────────────────────────────────
+    box(0.8, 3.2, 4.5, 1.5,
+        f'Studies included\nin synthesis\n(n = {included:,})',
+        bg=BOX_DRK, border=GREEN)
+    section_label(3.2, 'INCLUDED', '#1a5276')
+
+    arrow_down(3.05, 3.2, 1.7)
+
+    box(0.8, 0.3, 4.5, 1.4,
+        f'Data extracted\nby automated pipeline\n(n = {extracted:,})',
+        bg=BOX_DRK, border=GREEN)
+
+    # ── Footer ──────────────────────────────────────────────────────────────
+    ax.text(5.5, 0.08, 'Generated by Autonomous Research Assistant',
+            ha='center', va='bottom', fontsize=7, color='#888', style='italic')
+
+    plt.tight_layout(pad=0.5)
+    plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor=BG)
+    plt.close()
+
+    log.info("PRISMA diagram saved → %s", output_path)
+    return output_path

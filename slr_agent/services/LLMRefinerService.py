@@ -13,14 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 class LLMRefinerService:
-    """
-    Smart query refinement service.
-    Knows WHAT to do with the LLM — all decision logic lives here.
-    Domain-agnostic: works for medicine, law, IT, biology, or any field.
-    The SearchQuery object carries the domain context — this service
-    reads it and adapts the prompt dynamically.
-    """
-
     __MIN_PAPERS_WITH_ABSTRACT: int = 5
     __MAX_NEW_TERMS: int = 5
 
@@ -236,8 +228,8 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
 
-    from module1.services.DomainValidator import DomainValidator
-    from module1.services.PaperSampler import PaperSampler
+    from services.DomainValidator import DomainValidator
+    from services.PaperSampler import PaperSampler
 
     llm = GptConnector(
         baseUrl=os.getenv("OPENAI_BASE_URL", "https://inference.mlmp.ti.bfh.ch/api/v1"),

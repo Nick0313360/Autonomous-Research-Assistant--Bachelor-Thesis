@@ -2,7 +2,6 @@ import time
 import logging
 import requests
 from typing import List, Optional
-
 from connector.BaseConnector import BaseConnector
 from model.Paper import Paper
 
@@ -20,7 +19,6 @@ class SemanticScholarConnector(BaseConnector):
         super().__init__(apiKey=apiKey, baseUrl="https://api.semanticscholar.org")
 
     def fetchPapers(self, query: str, maxResults: int) -> List[Paper]:
-        # clamp to [1, 1000]
         original = maxResults
         maxResults = max(1, min(maxResults, self.__BULK_MAX))
         if maxResults != original:
@@ -29,24 +27,24 @@ class SemanticScholarConnector(BaseConnector):
                 original, maxResults, self.__BULK_MAX
             )
 
-        logger.info("S2 search: '%s'  limit=%d", query[:100], maxResults)
-
+        logger.info("S2 full query (%d chars): '%s'  limit=%d", len(query), query, maxResults)
+        
         params = {
             "query": query,
             "limit": maxResults,
             "fields": self.__FIELDS,
         }
-
-        # api-key header — confirmed working with S2 API key
         headers = {"api-key": self.apiKey} if self.apiKey else {}
 
-        # single request, one retry on 429
         response = self.__makeRequest(params, headers)
         if response is None:
             return []
 
         try:
             data = response.json()
+            logger.info("S2 raw response keys: %s", list(data.keys()))
+            logger.info("S2 total field: %s", data.get('total'))
+            logger.info("S2 data length: %d", len(data.get('data', [])))
         except ValueError:
             logger.error("S2 returned non-JSON response")
             return []

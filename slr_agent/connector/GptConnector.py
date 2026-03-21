@@ -7,17 +7,6 @@ logger = logging.getLogger(__name__)
 
 
 class GptConnector(BaseConnector):
-    """
-    Low level LLM API wrapper.
-    Knows HOW to talk to the LLM — nothing else.
-    Does not know about refinement, screening, or any domain logic.
-
-    CRITICAL — BFH MLMP constraint:
-    timeout must be set on the OpenAI client constructor.
-    Do NOT pass timeout= or max_tokens= to individual create() calls.
-    LMStudio backend crashes with HTTP 400 / exit-code-null if you do.
-    """
-
     def __init__(
         self,
         baseUrl: str,

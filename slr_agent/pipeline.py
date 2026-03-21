@@ -1,557 +1,564 @@
 """
-pipeline.py — Full SLR Agent Pipeline
+pipeline.py — LangGraph Orchestrator
 ======================================
-Orchestrates Module 1 → Module 2 → Module 3 using LangGraph.
+Wires Modules 1-4 into a single reproducible pipeline using LangGraph.
 
-Module 1  : Literature search + iterative LLM query refinement
-Module 2  : Two-stage screening (title/abstract → full-text)
-Module 3  : RAG data extraction (ChromaDB + embeddings + LLM)
+State machine:
+  search → screen → extract → quality → knowledge_graph → done
 
-Usage
------
-python pipeline.py                          # basic search → screen → extract
-python pipeline.py --ai                     # AI iterative search → screen → extract
-python pipeline.py --ai --query "..."       # custom query
-python pipeline.py --load outputs/papers_X.json   # skip search, use saved papers
-python pipeline.py --search-only            # Module 1 only
-python pipeline.py --screen-only --load X  # Module 2 only on saved papers
+Each node:
+  - Receives the full PipelineState
+  - Does its work
+  - Returns updated state fields
+  - Logs a structured event to outputs/run_<timestamp>/
 
-Install dependencies
---------------------
-pip install langgraph pymupdf langchain-text-splitters chromadb pydantic pdfminer.six
+LangGraph checkpointing means if the pipeline crashes at Module 3,
+restarting it resumes from the last completed checkpoint — Module 1
+and 2 don't re-run.
+
+Usage (programmatic):
+  from pipeline import run_pipeline
+  result = run_pipeline(search_query, mode="iterative", criteria="...")
 """
 
-import argparse
 import json
 import logging
 import os
-import sys
+import time
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
+from dataclasses import dataclass, field, asdict
 
-# ── LangGraph ─────────────────────────────────────────────────────────────────
 from langgraph.graph import StateGraph, END
-from typing import TypedDict
+from typing_extensions import TypedDict
 
-# ── Module 1 ──────────────────────────────────────────────────────────────────
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "module1_search"))
-from module1_search.literature_handler import run_basic_search, run_iterative_search
-
-# ── Module 2 ──────────────────────────────────────────────────────────────────
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "module2_screening"))
-from module2_screening.screening_agent import run_screening, DEFAULT_CRITERIA
-
-# ── Module 3 ──────────────────────────────────────────────────────────────────
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "module3_extraction"))
-from module3_extraction.extractor import run_extraction
-
-# ── logging ───────────────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(message)s",
-)
 log = logging.getLogger(__name__)
 
-# ── output directory ──────────────────────────────────────────────────────────
-OUTPUTS_DIR = os.path.join(os.path.dirname(__file__), "outputs")
-os.makedirs(OUTPUTS_DIR, exist_ok=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PIPELINE STATE — shared across all nodes
+# ══════════════════════════════════════════════════════════════════════════════
+
+class PipelineState(TypedDict):
+    # input
+    search_query_dict:   dict          # SearchQuery.to_dict()
+    search_mode:         str           # "basic" | "iterative"
+    screening_criteria:  str           # inclusion/exclusion criteria text
+    run_id:              str           # unique run identifier
+    output_dir:          str           # path to this run's output folder
+
+    # module 1 output
+    papers:              list          # deduplicated papers from Module 1
+    search_log:          dict          # SearchRunLog as dict
+
+    # module 2 output
+    screening_result:    dict          # full output from run_screening()
+
+    # module 3 output
+    extraction_result:   dict          # full output from run_extraction()
+
+    # module 4 output
+    quality_result:      dict          # full output from run_quality_assessment()
+    graph_result:        dict          # full output from run_knowledge_graph()
+
+    # status tracking
+    current_stage:       str
+    errors:              list
+    progress_log:        list          # [{stage, message, timestamp, count}]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SHARED STATE SCHEMA
-# This TypedDict is the single object that flows through every LangGraph node.
-# Every module reads from it and writes back to it.
-# Nothing is passed as function arguments between nodes — only state.
+# PROGRESS LOGGING — structured events for the frontend
 # ══════════════════════════════════════════════════════════════════════════════
 
-class SLRState(TypedDict):
-    # ── pipeline config (set once at start, never mutated) ───────────────────
-    query:              str          # initial search query
-    ai_mode:            bool         # True = iterative LLM refinement in M1
-    criteria:           str          # inclusion/exclusion criteria for M2
-    search_only:        bool         # stop after Module 1
-    screen_only:        bool         # stop after Module 2
-
-    # ── Module 1 outputs ─────────────────────────────────────────────────────
-    papers:             list[dict]   # all unique papers found
-    search_metadata:    dict         # query strings, timestamps, counts per iteration
-
-    # ── Module 2 outputs ─────────────────────────────────────────────────────
-    included_papers:    list[dict]   # papers that passed both 2A and 2B
-    excluded_ta:        list[dict]   # excluded at title/abstract
-    excluded_ft:        list[dict]   # excluded at full-text
-    uncertain:          list[dict]   # flagged for human review
-    no_pdf:             list[dict]   # passed 2A but no PDF found
-    decision_log:       list[dict]   # full per-paper audit trail
-    prisma_m2:          dict         # PRISMA counts from Module 2
-
-    # ── Module 3 outputs ─────────────────────────────────────────────────────
-    extracted_papers:   list[dict]   # ExtractedPaper dicts (validated by Pydantic)
-    failed_extraction:  list[dict]   # papers where PDF/extraction failed
-    prisma_m3:          dict         # PRISMA counts from Module 3
-
-    # ── pipeline control ─────────────────────────────────────────────────────
-    error:              Optional[str]   # set if any node crashes
-    completed_stages:   list[str]       # audit trail of which nodes ran
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _ts() -> str:
-    """Timestamp string for filenames."""
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
-
-
-def _save(data, name: str) -> str:
-    """Save data to outputs/ and return the path."""
-    path = os.path.join(OUTPUTS_DIR, f"{name}_{_ts()}.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    log.info("Saved → %s", path)
-    return path
-
-
-def _banner(text: str):
-    bar = "═" * 62
-    print(f"\n{bar}\n  {text}\n{bar}")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# NODE 1 — SEARCH  (Module 1)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def search_node(state: SLRState) -> SLRState:
-    """
-    Run Module 1: query PubMed (+ Semantic Scholar if key available),
-    deduplicate results, optionally run iterative LLM query refinement.
-
-    Writes to state:
-      - papers            : flat list of unique paper dicts
-      - search_metadata   : what queries ran, when, how many results
-      - completed_stages  : appends "search"
-    """
-    _banner("MODULE 1 — Literature Search")
-
-    try:
-        if state["ai_mode"]:
-            log.info("Running iterative AI search for: %s", state["query"])
-            papers = run_iterative_search(state["query"])
-        else:
-            log.info("Running basic search for: %s", state["query"])
-            papers = run_basic_search(state["query"])
-
-        log.info("Module 1 complete — %d unique papers", len(papers))
-
-        return {
-            **state,
-            "papers": papers,
-            "search_metadata": {
-                "initial_query": state["query"],
-                "ai_mode":       state["ai_mode"],
-                "timestamp":     datetime.now().isoformat(),
-                "total_found":   len(papers),
-            },
-            "completed_stages": state["completed_stages"] + ["search"],
-            "error": None,
-        }
-
-    except Exception as exc:
-        log.error("search_node crashed: %s", exc)
-        return {**state, "error": f"search_node: {exc}"}
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# NODE 2 — SCREENING  (Module 2)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def screening_node(state: SLRState) -> SLRState:
-    """
-    Run Module 2:
-      2A — title/abstract screening with LLM (include/exclude/uncertain)
-      2B — full-text screening via Unpaywall PDF + LLM
-
-    Reads from state  : papers, criteria
-    Writes to state   : included_papers, excluded_ta, excluded_ft,
-                        uncertain, no_pdf, decision_log, prisma_m2
-    """
-    _banner(f"MODULE 2 — Screening  ({len(state['papers'])} papers)")
-
-    try:
-        results = run_screening(
-            papers=state["papers"],
-            criteria=state["criteria"],
-        )
-
-        log.info(
-            "Module 2 complete — included: %d | excluded_ta: %d | "
-            "excluded_ft: %d | uncertain: %d",
-            len(results["included_papers"]),
-            len(results["excluded_title_abstract"]),
-            len(results["excluded_fulltext"]),
-            len(results["uncertain"]),
-        )
-
-        return {
-            **state,
-            "included_papers":  results["included_papers"],
-            "excluded_ta":      results["excluded_title_abstract"],
-            "excluded_ft":      results["excluded_fulltext"],
-            "uncertain":        results["uncertain"],
-            "no_pdf":           results["no_pdf"],
-            "decision_log":     results["decision_log"],
-            "prisma_m2":        results["prisma_stats"],
-            "completed_stages": state["completed_stages"] + ["screening"],
-            "error":            None,
-        }
-
-    except Exception as exc:
-        log.error("screening_node crashed: %s", exc)
-        return {**state, "error": f"screening_node: {exc}"}
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# NODE 3 — EXTRACTION  (Module 3 — RAG)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def extraction_node(state: SLRState) -> SLRState:
-    """
-    Run Module 3: RAG-based structured data extraction.
-
-    For each included paper:
-      Layer 1 — download PDF, extract text page by page (PyMuPDF)
-      Layer 2 — chunk text, embed with embeddinggemma:300m, store in ChromaDB
-      Layer 3 — for each field: embed query → retrieve top-4 chunks → LLM extracts
-      Layer 4 — validate result with Pydantic ExtractedPaper schema
-
-    Reads from state  : included_papers
-    Writes to state   : extracted_papers, failed_extraction, prisma_m3
-    """
-    _banner(f"MODULE 3 — RAG Extraction  ({len(state['included_papers'])} papers)")
-
-    try:
-        results = run_extraction(state["included_papers"])
-
-        log.info(
-            "Module 3 complete — extracted: %d | failed: %d",
-            len(results["extracted_papers"]),
-            len(results["failed_papers"]),
-        )
-
-        return {
-            **state,
-            "extracted_papers":  results["extracted_papers"],
-            "failed_extraction": results["failed_papers"],
-            "prisma_m3":         results["prisma_counts"],
-            "completed_stages":  state["completed_stages"] + ["extraction"],
-            "error":             None,
-        }
-
-    except Exception as exc:
-        log.error("extraction_node crashed: %s", exc)
-        return {**state, "error": f"extraction_node: {exc}"}
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# NODE 4 — SAVE  (always runs last)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def save_node(state: SLRState) -> SLRState:
-    """
-    Persist all pipeline outputs to outputs/ directory.
-    Runs after every terminal stage regardless of which modules ran.
-
-    Saves:
-      papers.json          — all papers from Module 1
-      included.json        — papers that passed Module 2
-      decision_log.json    — full screening audit trail
-      uncertain.json       — papers flagged for human review
-      prisma_stats.json    — combined PRISMA counts from M1 + M2 + M3
-      extracted.json       — structured extraction results from Module 3
-    """
-    _banner("SAVING OUTPUTS")
-
-    # always save what we have, even if pipeline stopped early
-    if state.get("papers"):
-        _save(state["papers"], "papers")
-
-    if state.get("included_papers"):
-        _save(state["included_papers"], "included")
-
-    if state.get("decision_log"):
-        _save(state["decision_log"], "decision_log")
-
-    if state.get("uncertain"):
-        _save(state["uncertain"], "uncertain")
-
-    if state.get("extracted_papers"):
-        _save(state["extracted_papers"], "extracted")
-
-    if state.get("failed_extraction"):
-        _save(state["failed_extraction"], "failed_extraction")
-
-    # combine PRISMA stats from all modules into one report
-    combined_prisma = {
-        "module1": {
-            "total_identified": len(state.get("papers", [])),
-            "query":            state.get("search_metadata", {}).get("initial_query"),
-        },
-        "module2": state.get("prisma_m2", {}),
-        "module3": state.get("prisma_m3", {}),
-        "stages_completed": state.get("completed_stages", []),
+def _progress(state: PipelineState, stage: str, message: str, count: int = 0) -> None:
+    """Append a progress event. Frontend polls the progress_log."""
+    entry = {
+        "stage":     stage,
+        "message":   message,
+        "count":     count,
+        "timestamp": datetime.now().isoformat(),
     }
-    _save(combined_prisma, "prisma_stats")
+    state["progress_log"].append(entry)
+    log.info("[%s] %s (n=%d)", stage, message, count)
 
-    return {**state, "completed_stages": state["completed_stages"] + ["save"]}
+    # also write to progress.json so frontend can poll it
+    progress_path = os.path.join(state["output_dir"], "progress.json")
+    with open(progress_path, "w") as f:
+        json.dump(state["progress_log"], f, indent=2)
+
+
+def _save_stage(state: PipelineState, filename: str, data: Any) -> None:
+    """Save stage output to the run's output directory."""
+    path = os.path.join(state["output_dir"], filename)
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2, default=str)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ROUTING FUNCTIONS  (conditional edges in the graph)
+# NODE 1 — Module 1: Search
 # ══════════════════════════════════════════════════════════════════════════════
 
-def after_search(state: SLRState) -> str:
-    """
-    After Module 1: decide what to do next.
-    - Error or no papers → save what we have and end
-    - search_only flag   → save and end
-    - Otherwise          → proceed to screening
-    """
-    if state.get("error"):
-        log.error("Stopping after search — error: %s", state["error"])
-        return "save"
-    if not state.get("papers"):
-        log.warning("Stopping after search — no papers found")
-        return "save"
-    if state.get("search_only"):
-        log.info("search_only mode — stopping after Module 1")
-        return "save"
+def search_node(state: PipelineState) -> dict:
+    """Execute Module 1: structured search + optional LLM refinement."""
+    from module1_searc.files.search_query import SearchQuery
+    from module1_searc.files.literature_handler import run_basic_search, run_iterative_search
+
+    _progress(state, "search", "Starting literature search…")
+
+    try:
+        sq = SearchQuery.from_dict(state["search_query_dict"])
+        mode = state.get("search_mode", "basic")
+
+        _progress(state, "search",
+                  f"Querying PubMed and Semantic Scholar ({mode} mode)…")
+
+        if mode == "iterative":
+            papers, log_obj = run_iterative_search(sq, max_iterations=3)
+        else:
+            papers, log_obj = run_basic_search(sq)
+
+        log_dict = json.loads(log_obj.to_json())
+
+        _save_stage(state, "module1_search_log.json", log_dict)
+
+        _progress(state, "search",
+                  f"Search complete — {len(papers)} unique papers identified",
+                  count=len(papers))
+
+        return {
+            "papers":        papers,
+            "search_log":    log_dict,
+            "current_stage": "search_complete",
+        }
+
+    except Exception as exc:
+        log.exception("Module 1 failed")
+        state["errors"].append({"stage": "search", "error": str(exc)})
+        _progress(state, "search", f"Search failed: {exc}")
+        return {"current_stage": "error", "papers": []}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NODE 2 — Module 2: Screening
+# ══════════════════════════════════════════════════════════════════════════════
+
+def screen_node(state: PipelineState) -> dict:
+    """Execute Module 2: title/abstract + full-text screening."""
+    from module2_screening.screening_agent import run_screening
+
+    papers = state.get("papers", [])
+    if not papers:
+        _progress(state, "screen", "No papers to screen — skipping")
+        return {"current_stage": "screen_skipped", "screening_result": {}}
+
+    _progress(state, "screen",
+              f"Starting title/abstract screening of {len(papers)} papers…",
+              count=len(papers))
+
+    try:
+        result = run_screening(
+            papers=papers,
+            criteria=state.get("screening_criteria", ""),
+        )
+
+        stats = result["prisma_stats"]
+        _progress(state, "screen",
+                  f"Screening complete — {stats['final_included']} papers included",
+                  count=stats["final_included"])
+        _progress(state, "screen",
+                  f"Excluded at title/abstract: {stats['excluded_title_abstract']} | "
+                  f"Uncertain (human review): {stats['uncertain_flagged_for_human']} | "
+                  f"No PDF: {stats['no_pdf_available']}")
+
+        _save_stage(state, "module2_screening_result.json", {
+            "prisma_stats":  result["prisma_stats"],
+            "included_count": len(result["included_papers"]),
+            "decision_log_count": len(result["decision_log"]),
+        })
+        # save full decision log separately (can be large)
+        _save_stage(state, "module2_decision_log.json", result["decision_log"])
+
+        return {
+            "screening_result": result,
+            "current_stage":    "screen_complete",
+        }
+
+    except Exception as exc:
+        log.exception("Module 2 failed")
+        state["errors"].append({"stage": "screen", "error": str(exc)})
+        _progress(state, "screen", f"Screening failed: {exc}")
+        return {"current_stage": "error", "screening_result": {}}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NODE 3 — Module 3: Extraction
+# ══════════════════════════════════════════════════════════════════════════════
+
+def extract_node(state: PipelineState) -> dict:
+    """Execute Module 3: RAG data extraction from included papers."""
+    from module3_extraction.extractor import run_extraction
+
+    screening = state.get("screening_result", {})
+    included  = screening.get("included_papers", [])
+
+    if not included:
+        _progress(state, "extract", "No included papers to extract from — skipping")
+        return {"current_stage": "extract_skipped", "extraction_result": {}}
+
+    _progress(state, "extract",
+              f"Starting RAG extraction from {len(included)} included papers…",
+              count=len(included))
+
+    try:
+        result = run_extraction(included)
+
+        counts = result["prisma_counts"]
+        _progress(state, "extract",
+                  f"Extraction complete — {counts['included_in_synthesis']} papers extracted",
+                  count=counts["included_in_synthesis"])
+        _progress(state, "extract",
+                  f"Failed (no PDF or extraction error): {counts['excluded_no_pdf']}")
+
+        _save_stage(state, "module3_extraction_result.json", {
+            "prisma_counts":  result["prisma_counts"],
+            "extracted_count": len(result["extracted_papers"]),
+        })
+        _save_stage(state, "module3_extracted_papers.json", result["extracted_papers"])
+
+        return {
+            "extraction_result": result,
+            "current_stage":     "extract_complete",
+        }
+
+    except Exception as exc:
+        log.exception("Module 3 failed")
+        state["errors"].append({"stage": "extract", "error": str(exc)})
+        _progress(state, "extract", f"Extraction failed: {exc}")
+        return {"current_stage": "error", "extraction_result": {}}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NODE 4 — Module 4A: Quality Assessment
+# ══════════════════════════════════════════════════════════════════════════════
+
+def quality_node(state: PipelineState) -> dict:
+    """Execute Module 4A: CASP + risk-of-bias quality assessment."""
+    from module4_quality_graph.quality_assessor import run_quality_assessment
+    from module3_extraction.extractor import _chroma_client
+
+    screening = state.get("screening_result", {})
+    included  = screening.get("included_papers", [])
+
+    if not included:
+        _progress(state, "quality", "No included papers for quality assessment — skipping")
+        return {"current_stage": "quality_skipped", "quality_result": {}}
+
+    _progress(state, "quality",
+              f"Starting CASP quality assessment of {len(included)} papers…",
+              count=len(included))
+
+    try:
+        result = run_quality_assessment(
+            included_papers=included,
+            chroma_client=_chroma_client,
+        )
+
+        summary = result["summary"]
+        _progress(state, "quality",
+                  f"Quality assessment complete — "
+                  f"High: {summary['high']}, Moderate: {summary['moderate']}, "
+                  f"Low: {summary['low']}",
+                  count=summary["total_assessed"])
+
+        _save_stage(state, "module4a_quality_result.json", {
+            "summary":    result["summary"],
+            "assessments": result["quality_assessments"],
+        })
+
+        return {
+            "quality_result": result,
+            "current_stage":  "quality_complete",
+        }
+
+    except Exception as exc:
+        log.exception("Module 4A failed")
+        state["errors"].append({"stage": "quality", "error": str(exc)})
+        _progress(state, "quality", f"Quality assessment failed: {exc}")
+        return {"current_stage": "error", "quality_result": {}}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NODE 5 — Module 4B: Knowledge Graph
+# ══════════════════════════════════════════════════════════════════════════════
+
+def knowledge_graph_node(state: PipelineState) -> dict:
+    """Execute Module 4B: populate Neo4j + answer research questions."""
+    # Import from the fixed knowledge_graph module
+    # Try module4 folder first, then root (depending on project layout)
+    try:
+        from module4_quality_graph.knowledge_graph import run_knowledge_graph, test_connection
+    except ImportError:
+        try:
+            from knowledge_graph import run_knowledge_graph, test_connection
+        except ImportError as e:
+            _progress(state, "knowledge_graph", f"Cannot import knowledge_graph module: {e}")
+            return {"current_stage": "error", "graph_result": {}}
+
+    screening  = state.get("screening_result",  {})
+    extraction = state.get("extraction_result", {})
+    quality    = state.get("quality_result",    {})
+
+    # ── connection test with informative message ──────────────────────────────
+    _progress(state, "knowledge_graph", "Testing Neo4j connection…")
+    if not test_connection():
+        msg = (
+            "Neo4j connection failed. "
+            "Check: Neo4j Desktop is running, database is started, "
+            "URI uses bolt:// (not neo4j://). "
+            "Pipeline data is saved to JSON outputs — graph step skipped."
+        )
+        _progress(state, "knowledge_graph", msg)
+        state["errors"].append({"stage": "knowledge_graph", "error": msg})
+        # Don't mark as hard error — earlier modules succeeded and their
+        # output is already saved to JSON. Graph is optional.
+        return {"current_stage": "complete_no_graph", "graph_result": {"error": msg}}
+
+    _progress(state, "knowledge_graph", "Populating Neo4j knowledge graph…")
+
+    try:
+        search_log = state.get("search_log", {})
+        search_metadata = {
+            "initial_query": state["search_query_dict"].get("research_question", ""),
+            "timestamp":     datetime.now().isoformat(),
+            "ai_mode":       state.get("search_mode") == "iterative",
+            "total_found":   len(state.get("papers", [])),
+        }
+
+        result = run_knowledge_graph(
+            search_metadata=search_metadata,
+            papers=state.get("papers", []),
+            decision_log=screening.get("decision_log", []),
+            extracted_papers=extraction.get("extracted_papers", []),
+            quality_assessments=quality.get("quality_assessments", []),
+        )
+
+        if result.get("error"):
+            _progress(state, "knowledge_graph", f"Graph error: {result['error']}")
+            state["errors"].append({"stage": "knowledge_graph", "error": result["error"]})
+            return {"current_stage": "complete_no_graph", "graph_result": result}
+
+        gs = result.get("graph_stats", {})
+        _progress(state, "knowledge_graph",
+                  f"Graph populated — "
+                  f"{gs.get('papers_in_graph', 0)} papers, "
+                  f"{gs.get('extractions_in_graph', 0)} extraction nodes",
+                  count=gs.get("papers_in_graph", 0))
+        _progress(state, "knowledge_graph",
+                  "Answering research questions via GraphCypherQAChain…")
+
+        _save_stage(state, "module4b_graph_result.json", result)
+
+        return {"graph_result": result, "current_stage": "complete"}
+
+    except Exception as exc:
+        log.exception("Module 4B failed")
+        state["errors"].append({"stage": "knowledge_graph", "error": str(exc)})
+        _progress(state, "knowledge_graph", f"Knowledge graph failed: {exc}")
+        return {"current_stage": "error", "graph_result": {}}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ROUTING — skip completed stages on resume
+# ══════════════════════════════════════════════════════════════════════════════
+
+def route_after_search(state: PipelineState) -> str:
+    if state["current_stage"] == "error":
+        return END
     return "screen"
 
-
-def after_screening(state: SLRState) -> str:
-    """
-    After Module 2: decide what to do next.
-    - Error               → save and end
-    - screen_only flag    → save and end
-    - No papers included  → save (nothing to extract)
-    - Otherwise           → proceed to extraction
-    """
-    if state.get("error"):
-        log.error("Stopping after screening — error: %s", state["error"])
-        return "save"
-    if state.get("screen_only"):
-        log.info("screen_only mode — stopping after Module 2")
-        return "save"
-    if not state.get("included_papers"):
-        log.warning("No papers passed screening — skipping extraction")
-        return "save"
+def route_after_screen(state: PipelineState) -> str:
+    if state["current_stage"] == "error":
+        return END
     return "extract"
 
+def route_after_extract(state: PipelineState) -> str:
+    if state["current_stage"] == "error":
+        return END
+    return "quality"
 
-def after_extraction(state: SLRState) -> str:
-    """After Module 3 — always save."""
-    return "save"
+def route_after_quality(state: PipelineState) -> str:
+    if state["current_stage"] == "error":
+        return END
+    return "knowledge_graph"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# BUILD THE GRAPH
+# BUILD GRAPH
 # ══════════════════════════════════════════════════════════════════════════════
 
-def build_graph():
-    """
-    Construct and compile the LangGraph state machine.
+def build_pipeline() -> StateGraph:
+    graph = StateGraph(PipelineState)
 
-    Graph structure:
-      START → search → [screen | save → END]
-                          ↓
-                       screen → [extract | save → END]
-                                    ↓
-                                 extract → save → END
+    graph.add_node("search",          search_node)
+    graph.add_node("screen",          screen_node)
+    graph.add_node("extract",         extract_node)
+    graph.add_node("quality",         quality_node)
+    graph.add_node("knowledge_graph", knowledge_graph_node)
 
-    Conditional edges make the routing decisions based on state contents.
-    """
-    graph = StateGraph(SLRState)
-
-    # register all nodes
-    graph.add_node("search",   search_node)
-    graph.add_node("screen",   screening_node)
-    graph.add_node("extract",  extraction_node)
-    graph.add_node("save",     save_node)
-
-    # entry point
     graph.set_entry_point("search")
 
-    # conditional edge: after search → screen OR save
-    graph.add_conditional_edges(
-        "search",
-        after_search,
-        {
-            "screen": "screen",
-            "save":   "save",
-        }
-    )
-
-    # conditional edge: after screening → extract OR save
-    graph.add_conditional_edges(
-        "screen",
-        after_screening,
-        {
-            "extract": "extract",
-            "save":    "save",
-        }
-    )
-
-    # conditional edge: after extraction → always save
-    graph.add_conditional_edges(
-        "extract",
-        after_extraction,
-        {
-            "save": "save",
-        }
-    )
-
-    # save always ends the pipeline
-    graph.add_edge("save", END)
+    graph.add_conditional_edges("search",          route_after_search,  {"screen": "screen", END: END})
+    graph.add_conditional_edges("screen",          route_after_screen,  {"extract": "extract", END: END})
+    graph.add_conditional_edges("extract",         route_after_extract, {"quality": "quality", END: END})
+    graph.add_conditional_edges("quality",         route_after_quality, {"knowledge_graph": "knowledge_graph", END: END})
+    graph.add_edge("knowledge_graph", END)
 
     return graph.compile()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PRINT FINAL SUMMARY
+# PUBLIC API
 # ══════════════════════════════════════════════════════════════════════════════
 
-def print_summary(state: SLRState):
-    """Print a human-readable PRISMA summary after the pipeline finishes."""
-    _banner("PIPELINE COMPLETE — PRISMA SUMMARY")
+def run_pipeline(
+    search_query_dict: dict,
+    mode: str = "basic",
+    criteria: str = "",
+    output_base: str = "outputs",
+) -> dict:
+    """
+    Run the full pipeline from search to knowledge graph.
 
-    m2 = state.get("prisma_m2") or {}
-    m3 = state.get("prisma_m3") or {}
+    Parameters
+    ----------
+    search_query_dict : SearchQuery.to_dict() output
+    mode              : "basic" or "iterative"
+    criteria          : inclusion/exclusion criteria for Module 2
+    output_base       : base directory for outputs
 
-    print(f"""
-  ── MODULE 1 — Identification ──────────────────────────────
-  Records identified                : {len(state.get('papers', []))}
+    Returns
+    -------
+    Final PipelineState as a dict
+    """
+    # create run directory
+    run_id     = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = os.path.join(output_base, f"run_{run_id}")
+    os.makedirs(output_dir, exist_ok=True)
 
-  ── MODULE 2 — Screening ───────────────────────────────────
-  Records screened (title/abstract) : {m2.get('records_screened', 0)}
-  Excluded at title/abstract        : {m2.get('excluded_title_abstract', 0)}
-  Uncertain → human review          : {m2.get('uncertain_flagged_for_human', 0)}
-  Sent to full-text screening       : {m2.get('sent_to_fulltext', 0)}
-  No PDF available                  : {m2.get('no_pdf_available', 0)}
-  Excluded at full-text             : {m2.get('excluded_fulltext', 0)}
-  Passed screening (included)       : {m2.get('final_included', 0)}
+    # set up file logging for this run
+    fh = logging.FileHandler(os.path.join(output_dir, "pipeline.log"))
+    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(name)s — %(message)s"))
+    logging.getLogger().addHandler(fh)
 
-  ── MODULE 3 — Extraction ──────────────────────────────────
-  Attempted extraction              : {m3.get('total_attempted', 0)}
-  Successfully extracted            : {m3.get('included_in_synthesis', 0)}
-  Failed (no PDF / error)           : {m3.get('excluded_no_pdf', 0)}
-
-  ── Stages completed ───────────────────────────────────────
-  {' → '.join(state.get('completed_stages', []))}
-""")
-
-    # show extracted fields for included papers
-    if state.get("extracted_papers"):
-        print("  EXTRACTED PAPERS:")
-        for p in state["extracted_papers"]:
-            print(f"\n    ✓ {p['title'][:70]}")
-            print(f"      Tool      : {p.get('tool_name')}")
-            print(f"      LLM       : {p.get('llm_used')}")
-            print(f"      Kappa     : {p.get('reported_kappa')}")
-            print(f"      Sensitivity: {p.get('reported_sensitivity')}")
-            print(f"      Sample n  : {p.get('sample_size')}")
-            sourced = list(p.get("sources", {}).keys())
-            print(f"      Sourced fields: {sourced}")
-
-    if state.get("uncertain"):
-        print(f"\n  UNCERTAIN — needs human review ({len(state['uncertain'])} papers):")
-        for u in state["uncertain"]:
-            print(f"    ? {u['paper']['title'][:70]}")
-
-    print(f"\n  All outputs saved to → {OUTPUTS_DIR}/\n")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# MAIN ENTRY POINT
-# ══════════════════════════════════════════════════════════════════════════════
-
-def parse_args():
-    p = argparse.ArgumentParser(description="SLR Agent — full pipeline")
-    p.add_argument("--ai",           action="store_true")
-    p.add_argument("--query",        type=str, default="artificial intelligence automation systematic review")
-    p.add_argument("--load",         type=str, default=None, metavar="PATH")
-    p.add_argument("--search-only",  action="store_true")
-    p.add_argument("--screen-only",  action="store_true")
-    p.add_argument("--extract-only", action="store_true")   # ← ADD THIS
-    p.add_argument("--skip-graph",   action="store_true")   # ← ADD THIS
-    p.add_argument("--criteria",     type=str, default=None)
-    return p.parse_args()
-
-
-def main():
-    args = parse_args()
-
-    # load custom criteria from file if provided
-    criteria = DEFAULT_CRITERIA
-    if args.criteria and os.path.exists(args.criteria):
-        with open(args.criteria) as f:
-            criteria = f.read()
-        log.info("Loaded custom criteria from %s", args.criteria)
-
-    # ── build initial state ───────────────────────────────────────────────────
-    initial_state: SLRState = {
-        "query":             args.query,
-        "ai_mode":           args.ai,
-        "criteria":          criteria,
-        "search_only":       args.search_only,
-        "screen_only":       args.screen_only,
-        "papers":            [],
-        "search_metadata":   {},
-        "included_papers":   [],
-        "excluded_ta":       [],
-        "excluded_ft":       [],
-        "uncertain":         [],
-        "no_pdf":            [],
-        "decision_log":      [],
-        "prisma_m2":         {},
-        "extracted_papers":  [],
-        "failed_extraction": [],
-        "prisma_m3":         {},
-        "completed_stages":  [],
-        "error":             None,
+    initial_state: PipelineState = {
+        "search_query_dict":  search_query_dict,
+        "search_mode":        mode,
+        "screening_criteria": criteria,
+        "run_id":             run_id,
+        "output_dir":         output_dir,
+        "papers":             [],
+        "search_log":         {},
+        "screening_result":   {},
+        "extraction_result":  {},
+        "quality_result":     {},
+        "graph_result":       {},
+        "current_stage":      "init",
+        "errors":             [],
+        "progress_log":       [],
     }
 
-    # ── if --load: skip Module 1, inject papers directly ─────────────────────
-    if args.load:
-        log.info("Loading papers from %s (skipping Module 1)", args.load)
-        with open(args.load, encoding="utf-8") as f:
-            loaded_papers = json.load(f)
-        log.info("Loaded %d papers", len(loaded_papers))
-        initial_state["papers"]           = loaded_papers
-        initial_state["completed_stages"] = ["search"]
-        # override the entry point by starting at screening
-        # we do this by running the graph but skipping search via papers being pre-filled
-        # LangGraph will still call search_node but it will detect papers already set
-        # simpler: just call screening and extraction directly
-        graph = build_graph()
+    # save initial config
+    with open(os.path.join(output_dir, "run_config.json"), "w") as f:
+        json.dump({
+            "run_id":     run_id,
+            "mode":       mode,
+            "query":      search_query_dict,
+            "started_at": datetime.now().isoformat(),
+        }, f, indent=2)
 
-        # inject pre-loaded papers and route past search
-        # by calling the graph with papers already populated
-        # LangGraph calls search_node first — we override it
-        state_with_papers = {**initial_state}
-        # manually run screen → extract → save since search is already done
-        state_with_papers = screening_node(state_with_papers)
-        if not args.screen_only and state_with_papers.get("included_papers"):
-            state_with_papers = extraction_node(state_with_papers)
-        final_state = save_node(state_with_papers)
-        print_summary(final_state)
-        return
+    pipeline = build_pipeline()
+    final_state = pipeline.invoke(initial_state)
 
-    # ── normal run: let LangGraph orchestrate everything ─────────────────────
-    graph = build_graph()
-    final_state = graph.invoke(initial_state)
-    print_summary(final_state)
+    # save final summary
+    summary = _build_summary(final_state)
+    with open(os.path.join(output_dir, "run_summary.json"), "w") as f:
+        json.dump(summary, f, indent=2, default=str)
+
+    log.info("Pipeline complete. Output: %s", output_dir)
+    return final_state
 
 
-if __name__ == "__main__":
-    main()
+def _build_summary(state: PipelineState) -> dict:
+    """Build a compact summary of the full run for the frontend."""
+    search_log = state.get("search_log", {})
+    screening  = state.get("screening_result", {})
+    extraction = state.get("extraction_result", {})
+    quality    = state.get("quality_result",   {})
+    graph      = state.get("graph_result",     {})
+
+    prisma = {
+        "identified":         len(state.get("papers", [])),
+        "screened":           screening.get("prisma_stats", {}).get("records_screened", 0),
+        "excluded_ta":        screening.get("prisma_stats", {}).get("excluded_title_abstract", 0),
+        "uncertain":          screening.get("prisma_stats", {}).get("uncertain_flagged_for_human", 0),
+        "sent_to_fulltext":   screening.get("prisma_stats", {}).get("sent_to_fulltext", 0),
+        "no_pdf":             screening.get("prisma_stats", {}).get("no_pdf_available", 0),
+        "excluded_ft":        screening.get("prisma_stats", {}).get("excluded_fulltext", 0),
+        "included":           screening.get("prisma_stats", {}).get("final_included", 0),
+        "extracted":          extraction.get("prisma_counts", {}).get("included_in_synthesis", 0),
+    }
+
+    s = {
+        "run_id":           state["run_id"],
+        "output_dir":       state["output_dir"],
+        "status":           state["current_stage"],
+        "errors":           state["errors"],
+        "prisma_counts":    prisma,
+        "quality_summary":  quality.get("summary", {}),
+        "graph_stats":      graph.get("graph_stats", {}),
+        "rq_answers":       graph.get("research_qa_answers", {}),
+        "progress_log":     state["progress_log"],
+    }
+
+    output_dir = state["output_dir"]
+    rq = state["search_query_dict"].get("research_question", "")
+
+    # ── Generate PRISMA diagram ───────────────────────────────────────────────
+    try:
+        from prisma_generator import generate_prisma_diagram
+        diagram_path = os.path.join(output_dir, "prisma_diagram.png")
+        result = generate_prisma_diagram(prisma, diagram_path)
+        s["prisma_diagram_path"] = diagram_path if result else None
+    except Exception as exc:
+        log.warning("PRISMA diagram generation failed: %s", exc)
+        s["prisma_diagram_path"] = None
+
+    # ── Generate research report ──────────────────────────────────────────────
+    try:
+        from report_generator import generate_report
+        report_path = generate_report(
+            research_question=rq,
+            prisma_counts=prisma,
+            extracted_papers=extraction.get("extracted_papers", []),
+            quality_summary=quality.get("summary", {}),
+            rq_answers=graph.get("research_qa_answers", {}),
+            output_dir=output_dir,
+        )
+        s["report_path"] = report_path
+    except Exception as exc:
+        log.warning("Report generation failed: %s", exc)
+        s["report_path"] = None
+
+    # ── Verify Neo4j actually has data ────────────────────────────────────────
+    try:
+        from knowledge_graph import KnowledgeGraph
+        kg = KnowledgeGraph()
+        s["neo4j_verified"] = True
+        s["neo4j_stats"]    = kg.get_stats()
+        kg.close()
+    except Exception as exc:
+        s["neo4j_verified"] = False
+        s["neo4j_error"]    = str(exc)
+
+    return s

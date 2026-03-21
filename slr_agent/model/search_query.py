@@ -49,42 +49,8 @@ from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Core Value Object
-# ---------------------------------------------------------------------------
-
 @dataclass(frozen=True)
 class SearchQuery:
-    """
-    Immutable validated container for a literature search request.
-
-    Mandatory
-    ---------
-    research_question : str
-        Plain-English question. Used verbatim as Semantic Scholar query
-        and for display/logging. Minimum required input.
-
-    PICO slots (optional but critical for PubMed precision)
-    -------------------------------------------------------
-    Each slot = one concept. Use comma-separated synonyms within a slot.
-
-    population   : domain/subject  e.g. "systematic review, literature review"
-    intervention : method/tool     e.g. "large language model, LLM, GPT, AI agent"
-    comparison   : baseline        e.g. "manual review, human reviewer"
-    outcome      : metric          e.g. "PRISMA, precision, recall, screening"
-
-    domain_keywords : List[str]
-        Anchor terms for the LLM refiner. Prevents off-topic expansion terms.
-        Auto-derived from PICO slots if not provided explicitly.
-
-    year_range : (int, int)
-        Inclusive publication year filter e.g. (2018, 2024).
-
-    max_papers_per_db : int
-        Hard cap per database. Max 1000 (S2 API hard limit for bulk endpoint).
-    """
-
     research_question: str
     population: Optional[str] = None
     intervention: Optional[str] = None
@@ -196,36 +162,6 @@ class QueryBuilder:
 
     @staticmethod
     def build_semantic(sq: SearchQuery) -> str:
-        """
-        Builds a Semantic Scholar bulk-endpoint keyword query.
-
-        WHY NOT use the research question as a sentence:
-        ─────────────────────────────────────────────────
-        S2 bulk endpoint (/paper/search/bulk) does KEYWORD matching, not
-        semantic/NLP search. A sentence like:
-          "How do AI agents and large language models automate systematic review?"
-        scores poorly because:
-          1. Stopwords (how, do, and, large) add noise
-          2. Question marks confuse the tokeniser
-          3. The endpoint weights term frequency — uncommon technical terms
-             should be the core signal, not sentence structure
-
-        Confirmed by observation: sentence query returned 1 paper;
-        keyword query returned hundreds.
-
-        STRATEGY — 3-tier keyword assembly:
-        ─────────────────────────────────────
-        Tier 1 (required): first synonym from population slot (the domain)
-                           + first synonym from intervention slot (the tech)
-        Tier 2 (context):  up to 2 more intervention synonyms to broaden tech coverage
-        Tier 3 (optional): first synonym from outcome if it adds domain specificity
-
-        Result: a compact, high-signal keyword string with the most discriminative
-        terms at the front (S2 weights earlier terms more heavily).
-
-        Example output for the systematic review / LLM query:
-          "systematic review large language model LLM automation PRISMA"
-        """
         terms: List[str] = []
 
         # Tier 1: domain + primary technology term (always present)

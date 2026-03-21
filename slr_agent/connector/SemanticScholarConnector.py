@@ -114,7 +114,7 @@ class SemanticScholarConnector(BaseConnector):
                 title=title,
                 abstract=abstract,
                 doi=doi,
-                year=year if year else 0,
+                year=year if year else None,
                 source="SemanticScholar",
                 pdfLink=pdfLink,
                 author=authors

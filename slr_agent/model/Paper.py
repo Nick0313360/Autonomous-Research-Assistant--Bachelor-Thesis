@@ -7,7 +7,7 @@ class Paper(BaseModel):
     title: str
     abstract: Optional[str] = None
     doi: Optional[str] = None
-    year: int
+    year: Optional[int] = None
     source: str
     pdfLink: Optional[str] = None
     author: Optional[List[str]] = None
@@ -20,6 +20,8 @@ class Paper(BaseModel):
 
     @field_validator('year')
     def mustBeYear(cls, v):
+        if v is None:
+            return v
         currentYear = date.today().year
         if v <= 0 or v > currentYear:
             raise ValueError(f"the year {v} is not valid")

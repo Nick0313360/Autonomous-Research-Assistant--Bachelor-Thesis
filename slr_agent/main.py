@@ -43,7 +43,7 @@ def buildSearchQuery() -> SearchQuery:
             "text mining", "prompt engineering", "semantic search",
             "artificial intelligence"
         ],
-        maxPapersPerDb=100,
+        maxPapersPerDb=1000,
     )
 
 

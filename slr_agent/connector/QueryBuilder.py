@@ -28,12 +28,9 @@ class QueryBuilder:
         keywords = []
         for slot in slots:
             terms = [s.strip() for s in slot.split(",") if s.strip()]
-            keywords.extend(terms)
+            keywords.extend(terms[:2])
 
-        query = " ".join(keywords)
-        if len(query) > 200:
-            query = query[:200].rsplit(" ", 1)[0]
-        return query
+        return " ".join(keywords)
 
     def __collectSlots(self, searchQuery: SearchQuery) -> List[str]:
         slots = []

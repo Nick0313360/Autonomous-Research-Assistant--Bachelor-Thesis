@@ -8,6 +8,7 @@ from model.RefinementResult import RefinementResult
 from model.TermDecision import TermDecision
 from services.DomainValidator import DomainValidator
 from services.PaperSampler import PaperSampler
+import unicodedata
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,13 @@ class LLMRefinerService:
 
         # validate each suggested term
         candidateTerms = [t.strip().lower() for t in rawOutput.split(",") if t.strip()]
+
+        # then in refineQuery() change the parsing line to:
+        candidateTerms = [
+            self.__normalise(t.strip().lower())
+            for t in rawOutput.split(",")
+            if t.strip()
+        ]
 
         for term in candidateTerms:
             decision = self.__validateTerm(
@@ -217,6 +225,18 @@ Return ONLY a comma-separated list of terms. Nothing else.
             return TermDecision(term=term, accepted=False, reason=reason)
 
         return TermDecision(term=term, accepted=True, reason=reason)
+
+    def __normalise(self, text: str) -> str:
+        # replace unicode dashes and quotes with standard ascii equivalents
+        text = text.replace('\u2011', '-')  # non-breaking hyphen
+        text = text.replace('\u2010', '-')  # hyphen
+        text = text.replace('\u2012', '-')  # figure dash
+        text = text.replace('\u2013', '-')  # en dash
+        text = text.replace('\u2014', '-')  # em dash
+        text = text.replace('\u2019', "'")  # right single quote
+        text = text.replace('\u201c', '"')  # left double quote
+        text = text.replace('\u201d', '"')  # right double quote
+        return text
 
 
 # DELETE BEFORE PRODUCTION — smoke test

@@ -182,11 +182,15 @@ class SearchService:
                 break
 
             # expand query for next iteration
+            # expand query for next iteration
             currentPubmedQuery = refinementResult.expandedQuery
-            currentSemanticQuery = self.__refiner.expandQuery(
-                currentSemanticQuery,
-                refinementResult.acceptedTerms
-            )
+
+            # S2 gets a fresh short query using only the NEW terms from this iteration
+            # not the accumulated string — S2 bulk endpoint breaks above ~100 chars
+            if refinementResult.acceptedTerms:
+                currentSemanticQuery = " ".join(refinementResult.acceptedTerms)
+            else:
+                currentSemanticQuery = self.__queryBuilder.buildSemantic(searchQuery)
 
             allPapers = uniquePapers
 

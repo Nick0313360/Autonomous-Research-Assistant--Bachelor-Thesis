@@ -1,8 +1,9 @@
 from typing import List
-from TermDecision import TermDecision
+from model.TermDecision import TermDecision
 from pydantic import BaseModel
 
 class RefinementResult(BaseModel):
+    iteration: int = 0
     acceptedTerms: List[str] = []
     rejectedTerms: List[TermDecision] = []
     expandedQuery: str = ""

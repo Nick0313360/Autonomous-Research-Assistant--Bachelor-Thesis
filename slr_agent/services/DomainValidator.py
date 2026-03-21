@@ -67,7 +67,15 @@ class DomainValidator:
                 return True, f"vocabulary_partial:{vocabTerm}"
 
         # build anchor list from domainKeywords + researchQuestion
-        anchors = [kw.lower() for kw in domainKeywords if kw]
+        anchors = []
+        for kw in domainKeywords:
+            for part in kw.split(","):
+                part = part.strip().lower()
+                if part:
+                    anchors.append(part)
+        if researchQuestion:
+            anchors.append(researchQuestion.lower())
+
         if researchQuestion:
             anchors.append(researchQuestion.lower())
 

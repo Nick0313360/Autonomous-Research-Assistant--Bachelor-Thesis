@@ -1,10 +1,10 @@
 from typing import List
-from module1.models.Paper import Paper
-from module1.models.SearchQuery import SearchQuery
-from module1.models.SearchRun import SearchRun
-from module1.connectors.BaseConnector import BaseConnector
-from module1.services.DeduplicationService import DeduplicationService
-from module1.services.LLMRefinerService import LLMRefinerService
+from model.Paper import Paper
+from model.SearchQuery import SearchQuery
+from model.SearchRun import SearchRun
+from connector.BaseConnector import BaseConnector
+from services.DeduplicationService import DeduplicationService
+from services.LLMRefinerService import LLMRefinerService
 
 
 class SearchService:

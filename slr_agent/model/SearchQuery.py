@@ -3,7 +3,6 @@ from pydantic import field_validator, BaseModel
 
 class SearchQuery(BaseModel):
     researchQuestion: str 
-    researchQuestion: str 
     population : str
     intervention: str 
     comparison: Optional[str] = None
@@ -12,10 +11,10 @@ class SearchQuery(BaseModel):
     year_range: Optional[Tuple[int, int]] = None
     maxPapersPerDb: int 
 
-    @field_validator('researchQuestion', 'intervention', 'population', 'outcome', 'maxPapersPerDb')    
+    @field_validator('researchQuestion', 'intervention', 'population', 'outcome')    
     def mustNotEmpty(cls, v):
         if not v or not v.strip():
-            return ValueError(f"{v} Is empty field")
+            raise ValueError(f"{v} Is empty field")
         return v
     
     @field_validator('maxPapersPerDb')
@@ -43,7 +42,7 @@ class SearchQuery(BaseModel):
 
         fields = ['population', 'intervention', 'outcome']
         if self.comparison:
-            fields.append(self.comparison)
+            fields.append('comparison')
         
         for field_name in fields:
             field_value = getattr(self, field_name)

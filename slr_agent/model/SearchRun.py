@@ -1,9 +1,9 @@
 from typing import List
 from datetime import datetime
 import uuid
-from Paper import Paper
-from SearchQuery import SearchQuery
-from SearchIteration import SearchIteration
+from model.Paper import Paper
+from model.SearchQuery import SearchQuery
+from model.SearchIteration import SearchIteration
 from pydantic import BaseModel, Field, field_validator
 
 class SearchRun(BaseModel):
@@ -34,23 +34,7 @@ class SearchRun(BaseModel):
     def getLatestPapers(self) -> List[Paper]:
         if not self.iterations:
             return []
-        
-        if self.searchQuery.year_range:
-            target_year = self.searchQuery.year_range[1]
-        else:
-            target_year = 0
-            for iteration in self.iterations:
-                for paper in iteration.papers:
-                    if paper.year > target_year:
-                        target_year = paper.year
-        
-        latest_papers = []
-        for iteration in self.iterations:
-            for paper in iteration.papers:
-                if paper.year == target_year:
-                    latest_papers.append(paper)
-        
-        return latest_papers
+        return self.iterations[-1].papers
     
     def computeTotals(self) -> None:
         total_results = 0

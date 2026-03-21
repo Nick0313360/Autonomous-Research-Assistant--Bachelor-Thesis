@@ -1,5 +1,59 @@
-biopython
-requests
-rapidfuzz
-openai
-python-dotenv
+module1/
+│
+├── models/
+│   ├── __init__.py
+│   ├── SearchQuery.py
+│   ├── Paper.py
+│   ├── SearchRun.py           # SearchRun + SearchIteration
+│   ├── RefinementResult.py    # RefinementResult + TermDecision
+│
+├── connectors/
+│   ├── __init__.py
+│   ├── BaseConnector.py
+│   ├── PubMedConnector.py
+│   ├── SemanticScholarConnector.py
+│   ├── LlmConnector.py
+│   └── QueryBuilder.py
+│
+├── services/
+│   ├── __init__.py
+│   ├── DeduplicationService.py
+│   ├── DomainValidator.py
+│   ├── PaperSampler.py
+│   └── LlmRefinementService.py
+│
+└── orchestrator/
+    ├── __init__.py
+    └── SearchService.py
+
+
+
+module1/
+│
+├── models/
+│   ├── __init__.py
+│   ├── SearchQuery.py
+│   ├── Paper.py
+│   ├── TermDecision.py
+│   ├── RefinementResult.py
+│   ├── SearchIteration.py
+│   └── SearchRun.py
+│
+├── connectors/
+│   ├── __init__.py
+│   ├── BaseConnector.py
+│   ├── PubMedConnector.py
+│   ├── SemanticScholarConnector.py
+│   ├── LlmConnector.py
+│   └── QueryBuilder.py
+│
+├── services/
+│   ├── __init__.py
+│   ├── DeduplicationService.py
+│   ├── DomainValidator.py
+│   ├── PaperSampler.py
+│   └── LlmRefinementService.py
+│
+└── orchestrator/
+    ├── __init__.py
+    └── SearchService.py

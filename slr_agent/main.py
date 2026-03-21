@@ -1,209 +1,148 @@
-"""
-main.py — Pipeline Runner
-=========================
-Runs Module 1 (search) → Module 2 (screening) end to end.
-
-Usage
------
-# Full pipeline: basic search → screening
-python main.py
-
-# Full pipeline: iterative AI search → screening
-python main.py --ai
-
-# Skip search, load saved papers from a previous run → screening only
-python main.py --load outputs/papers.json
-
-# Search only, save papers, skip screening
-python main.py --search-only
-
-# Override the research query
-python main.py --ai --query "machine learning evidence synthesis automation"
-"""
-
-import argparse
-import json
-import logging
 import os
-import sys
-from datetime import datetime
+import logging
+from dotenv import load_dotenv
 
-# ── Module 1 ──────────────────────────────────────────────────────────────────
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "module1_search"))
-from module1_search.literature_handler import run_basic_search, run_iterative_search
+from model.SearchQuery import SearchQuery
+from data.PrismaLog import PrismaLog
+from connector.PubMedConnector import PubMedConnector
+from connector.SemanticScholarConnector import SemanticScholarConnector
+from connector.GptConnector import GptConnector
+from services.DeduplicationService import DeduplicationService
+from services.DomainValidator import DomainValidator
+from services.PaperSampler import PaperSampler
+from services.LLMRefinerService import LLMRefinerService
+from orchestrator.SearchService import SearchService
 
-# ── Module 2 ──────────────────────────────────────────────────────────────────
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "module2_screening"))
-from module2_screening.screening_agent import run_screening, DEFAULT_CRITERIA
+load_dotenv()
 
-# ── logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
-log = logging.getLogger(__name__)
-
-# ── output directory ──────────────────────────────────────────────────────────
-OUTPUTS_DIR = os.path.join(os.path.dirname(__file__), "outputs")
-os.makedirs(OUTPUTS_DIR, exist_ok=True)
+logger = logging.getLogger(__name__)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _timestamp() -> str:
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
-
-
-def _save_json(data, filename: str) -> str:
-    path = os.path.join(OUTPUTS_DIR, filename)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    log.info("Saved → %s", path)
-    return path
-
-
-def _print_banner(text: str):
-    bar = "═" * 60
-    print(f"\n{bar}")
-    print(f"  {text}")
-    print(f"{bar}")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 1 — RUN MODULE 1
-# ══════════════════════════════════════════════════════════════════════════════
-
-def step_search(query: str, ai_mode: bool) -> list[dict]:
-    _print_banner(f"MODULE 1 — Literature Search  ({'AI refinement' if ai_mode else 'basic'})")
-
-    if ai_mode:
-        papers = run_iterative_search(query)
-    else:
-        papers = run_basic_search(query)
-
-    log.info("Module 1 complete — %d unique papers found", len(papers))
-    return papers
+def buildSearchQuery() -> SearchQuery:
+    """
+    Research query: AI agents for systematic literature review automation.
+    Change these fields to test any other research topic.
+    """
+    return SearchQuery(
+        researchQuestion=(
+            "How do large language models and AI agents automate "
+            "the systematic literature review process?"
+        ),
+        population="systematic reviews, literature reviews, evidence synthesis",
+        intervention="LLM, large language model, GPT, AI agent, artificial intelligence",
+        outcome="screening automation, title screening, abstract screening, PRISMA",
+        comparison=None,
+        domainKeywords=[
+            "systematic review", "LLM", "screening", "PRISMA",
+            "evidence synthesis", "automation", "AI agent",
+            "machine learning", "natural language processing",
+            "text mining", "prompt engineering", "semantic search",
+            "artificial intelligence"
+        ],
+        maxPapersPerDb=1000,
+    )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 2 — RUN MODULE 2
-# ══════════════════════════════════════════════════════════════════════════════
+def buildSearchService() -> SearchService:
+    """
+    Wires up all dependencies and returns a ready SearchService.
+    Reads all credentials from .env — never hardcoded here.
+    """
+    # connectors
+    pubmed = PubMedConnector(
+        apiKey=os.getenv("PUBMED_API_KEY", ""),
+        email=os.getenv("PUBMED_EMAIL", ""),
+    )
+    semantic = SemanticScholarConnector(
+        apiKey=os.getenv("SEMANTIC_SCHOLAR_API_KEY", ""),
+    )
+    llm = GptConnector(
+        baseUrl=os.getenv("OPENAI_BASE_URL", "https://inference.mlmp.ti.bfh.ch/api/v1"),
+        apiKey=os.getenv("OPENAI_API_KEY", ""),
+        modelName=os.getenv("OPENAI_MODEL", "gpt-oss:120b"),
+    )
 
-def step_screening(papers: list[dict]) -> dict:
-    _print_banner("MODULE 2 — Screening Agent (2A title/abstract → 2B full-text)")
+    # services
+    deduplicator = DeduplicationService(threshold=0.9)
+    validator = DomainValidator(vocabulary=frozenset())
+    sampler = PaperSampler()
+    refiner = LLMRefinerService(llm=llm, validator=validator, sampler=sampler)
 
-    results = run_screening(papers, criteria=DEFAULT_CRITERIA)
+    return SearchService(
+        connectors=[pubmed, semantic],
+        deduplicator=deduplicator,
+        refiner=refiner,
+    )
 
-    return results
 
+def printResults(searchRun, prisma: PrismaLog) -> None:
+    """Prints a clean summary of what the search found."""
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PRINT FINAL SUMMARY
-# ══════════════════════════════════════════════════════════════════════════════
+    print("\n" + "=" * 60)
+    print("SEARCH COMPLETE")
+    print("=" * 60)
 
-def print_summary(papers: list[dict], screening: dict):
-    ts = _timestamp()
-    stats = screening["prisma_stats"]
+    print(f"\nRun ID   : {searchRun.runId}")
+    print(f"Mode     : {searchRun.mode}")
+    print(f"Created  : {searchRun.createdAt}")
 
-    _print_banner("PIPELINE COMPLETE — PRISMA SUMMARY")
+    print("\n── PRISMA Identification ──────────────────────────────")
+    print(f"PubMed identified        : {prisma.identifiedPubMed}")
+    print(f"Semantic Scholar         : {prisma.identifiedSemanticScholar}")
+    print(f"Total raw                : {prisma.identifiedPubMed + prisma.identifiedSemanticScholar}")
 
-    print(f"""
-  Records identified (Module 1)     : {stats['records_screened']}
-  ─────────────────────────────────────────────────
-  Excluded at title/abstract (2A)   : {stats['excluded_title_abstract']}
-  Uncertain → human review queue    : {stats['uncertain_flagged_for_human']}
-  Sent to full-text screening (2B)  : {stats['sent_to_fulltext']}
-  ─────────────────────────────────────────────────
-  No PDF available                  : {stats['no_pdf_available']}
-  Excluded at full-text (2B)        : {stats['excluded_fulltext']}
-  ─────────────────────────────────────────────────
-  FINAL INCLUDED                    : {stats['final_included']}
-""")
+    print("\n── PRISMA Deduplication ───────────────────────────────")
+    print(f"Removed by DOI           : {prisma.duplicatesRemovedByDoi}")
+    print(f"Removed by title         : {prisma.duplicatesRemovedByTitle}")
+    print(f"Total removed            : {prisma.duplicatesRemovedByDoi + prisma.duplicatesRemovedByTitle}")
+    print(f"Records after dedup      : {prisma.recordsAfterDeduplication}")
 
-    if screening["included_papers"]:
-        print("  INCLUDED PAPERS:")
-        for p in screening["included_papers"]:
-            print(f"    ✓  {p['title']}")
+    print("\n── Query Audit ────────────────────────────────────────")
+    print(f"Iterations run           : {prisma.iterationsRun}")
+    for i, query in enumerate(prisma.queriesUsed, 1):
+        print(f"  Iteration {i} query: {query[:80]}...")
+    for i, terms in enumerate(prisma.termsAddedPerIteration, 1):
+        print(f"  Iteration {i} new terms: {terms}")
 
-    if screening["uncertain"]:
-        print(f"\n  UNCERTAIN — needs human review ({len(screening['uncertain'])} papers):")
-        for u in screening["uncertain"]:
-            print(f"    ?  {u['paper']['title']}")
-            print(f"       reason: {u['reason']}")
-
+    print("\n── Final Papers ───────────────────────────────────────")
+    print(f"Total unique papers      : {len(searchRun.finalPapers)}")
     print()
 
-    # save everything
-    _save_json(papers,                          f"papers_{ts}.json")
-    _save_json(screening["included_papers"],    f"included_{ts}.json")
-    _save_json(screening["prisma_stats"],       f"prisma_stats_{ts}.json")
-    _save_json(screening["decision_log"],       f"decision_log_{ts}.json")
-    _save_json(screening["uncertain"],          f"uncertain_{ts}.json")
+    for i, paper in enumerate(searchRun.finalPapers[:20], 1):
+        print(f"[{i:02d}] {paper.title}")
+        print(f"      Year   : {paper.year}  |  Source : {paper.source}  |  DOI : {paper.doi}")
+        if paper.abstract:
+            print(f"      Abstract: {paper.abstract[:120]}...")
+        print()
 
-    print(f"  All outputs saved to → {OUTPUTS_DIR}/")
+    if len(searchRun.finalPapers) > 20:
+        print(f"... and {len(searchRun.finalPapers) - 20} more papers not shown")
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# CLI
-# ══════════════════════════════════════════════════════════════════════════════
-
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="SLR Agent — Module 1 + Module 2 pipeline"
-    )
-    parser.add_argument(
-        "--ai",
-        action="store_true",
-        help="Use iterative LLM query refinement in Module 1 (default: basic search)",
-    )
-    parser.add_argument(
-        "--query",
-        type=str,
-        default="artificial intelligence systematic review automation",
-        help="Initial search query (default: 'artificial intelligence systematic review automation')",
-    )
-    parser.add_argument(
-        "--load",
-        type=str,
-        default=None,
-        metavar="PATH",
-        help="Skip Module 1 — load papers from a saved JSON file instead",
-    )
-    parser.add_argument(
-        "--search-only",
-        action="store_true",
-        help="Run Module 1 only, save papers, skip screening",
-    )
-    return parser.parse_args()
+    print("=" * 60)
 
 
 def main():
-    args = parse_args()
+    # reset prisma log at the start of every run
+    PrismaLog.resetInstance()
 
-    # ── STEP 1: get papers ────────────────────────────────────────────────────
-    if args.load:
-        # load from previous run
-        log.info("Loading papers from %s", args.load)
-        with open(args.load, encoding="utf-8") as f:
-            papers = json.load(f)
-        log.info("Loaded %d papers", len(papers))
-    else:
-        papers = step_search(args.query, ai_mode=args.ai)
-        # always save raw search results so you can re-run screening without
-        # hitting the APIs again
-        _save_json(papers, f"papers_{_timestamp()}.json")
+    searchQuery = buildSearchQuery()
+    searchService = buildSearchService()
 
-    if args.search_only:
-        _print_banner(f"Search-only mode — {len(papers)} papers saved. Exiting.")
-        return
+    print("\nStarting Module 1 — Search and Iterative Refinement")
+    print(f"Research question: {searchQuery.researchQuestion}")
+    print(f"Mode: iterative")
+    print("-" * 60)
 
-    # ── STEP 2: screen ────────────────────────────────────────────────────────
-    screening = step_screening(papers)
+    searchRun = searchService.runSearch(searchQuery=searchQuery, mode="iterative")
 
-    # ── SUMMARY + SAVE ────────────────────────────────────────────────────────
-    print_summary(papers, screening)
+    prisma = PrismaLog.getInstance()
+    prisma.runId = searchRun.runId
+
+    printResults(searchRun, prisma)
 
 
 if __name__ == "__main__":

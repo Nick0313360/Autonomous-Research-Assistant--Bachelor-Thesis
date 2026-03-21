@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Research Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0f;--surface:#111118;--border:#1e1e2e;--border-lit:#2e2e4e;
+  --accent:#5b8af0;--accent-dim:#2a3f7a;--green:#3ecf8e;--amber:#f0a04b;
+  --red:#f05b5b;--text:#e8e8f0;--muted:#666680;
+  --mono:'DM Mono',monospace;--sans:'Syne',sans-serif;--radius:6px;
+}
+html{font-size:15px}
+body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;z-index:0;
+  background-image:linear-gradient(rgba(255,255,255,.015) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(255,255,255,.015) 1px,transparent 1px);
+  background-size:40px 40px;pointer-events:none}
+.wrap{position:relative;z-index:1;max-width:960px;margin:0 auto;padding:0 24px 100px}
+
+/* header */
+header{padding:48px 0 36px;border-bottom:1px solid var(--border);margin-bottom:36px}
+.logo{font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--accent);margin-bottom:14px;
+  display:flex;align-items:center;gap:10px}
+.logo::before{content:'';width:8px;height:8px;background:var(--accent);border-radius:50%;
+  animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(91,138,240,.4)}50%{opacity:.7;box-shadow:0 0 0 6px rgba(91,138,240,0)}}
+h1{font-family:var(--sans);font-size:clamp(22px,4vw,36px);font-weight:800;
+  line-height:1.15;letter-spacing:-.02em}
+.sub{margin-top:10px;font-size:13px;color:var(--muted);line-height:1.6}
+
+/* sections */
+.section{margin-bottom:28px}
+.section-label{font-size:10px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.section-label::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* info callout */
+.db-info{background:rgba(91,138,240,.07);border:1px solid var(--accent-dim);
+  border-radius:var(--radius);padding:14px 16px;margin-bottom:20px;font-size:12px;
+  line-height:1.7;color:var(--text)}
+.db-info strong{color:var(--accent)}
+.db-info .db-row{display:flex;gap:10px;margin-top:6px}
+.db-badge{background:var(--surface);border:1px solid var(--border);
+  border-radius:4px;padding:3px 8px;font-size:10px;color:var(--muted)}
+
+/* form */
+.field{margin-bottom:14px}
+label{display:flex;align-items:baseline;gap:8px;font-size:11px;
+  color:var(--muted);margin-bottom:6px}
+label strong{font-size:12px;color:var(--text);font-weight:500}
+.hint{font-size:10px;color:var(--muted);font-style:italic}
+.required{color:var(--accent)}
+.field-note{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5}
+input[type="text"],input[type="number"],textarea,select{
+  width:100%;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);color:var(--text);font-family:var(--mono);
+  font-size:13px;padding:10px 13px;outline:none;transition:border-color .15s,box-shadow .15s;
+  resize:vertical}
+input:focus,textarea:focus,select:focus{
+  border-color:var(--accent-dim);box-shadow:0 0 0 3px rgba(91,138,240,.12)}
+textarea{min-height:68px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+
+/* advanced toggle */
+.advanced-toggle{font-size:11px;color:var(--accent);cursor:pointer;
+  display:flex;align-items:center;gap:6px;margin-bottom:14px;user-select:none}
+.advanced-toggle::before{content:'▶';font-size:9px;transition:transform .2s}
+.advanced-toggle.open::before{transform:rotate(90deg)}
+.advanced-content{display:none}
+.advanced-content.open{display:block}
+
+/* query preview */
+.preview-panel{background:#0c0c14;border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px;margin-top:16px;display:none}
+.preview-panel.visible{display:block}
+.preview-title{font-size:10px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:12px}
+.query-block{margin-bottom:14px}
+.query-label{font-size:10px;color:var(--muted);margin-bottom:4px}
+.query-text{font-size:11.5px;color:var(--green);word-break:break-word;line-height:1.55}
+
+/* mode toggle */
+.mode-group{display:flex;gap:8px}
+.mode-btn{flex:1;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:10px;text-align:center;cursor:pointer;
+  transition:all .15s;color:var(--muted);font-family:var(--mono);font-size:12px}
+.mode-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(91,138,240,.07)}
+.mode-desc{font-size:10px;margin-top:3px;opacity:.7}
+
+/* buttons */
+.btn-run{width:100%;padding:14px;background:var(--accent);color:#fff;border:none;
+  border-radius:var(--radius);font-family:var(--sans);font-size:14px;font-weight:700;
+  letter-spacing:.04em;cursor:pointer;transition:opacity .15s,transform .1s;margin-top:8px}
+.btn-run:hover{opacity:.88;transform:translateY(-1px)}
+.btn-run:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-secondary{background:var(--surface);color:var(--accent);border:1px solid var(--accent-dim)}
+
+/* pipeline progress */
+#pipeline-panel{display:none;margin-top:40px}
+#pipeline-panel.visible{display:block}
+.pipeline-stages{display:flex;gap:0;margin-bottom:28px;border:1px solid var(--border);
+  border-radius:var(--radius);overflow:hidden}
+.stage-pill{flex:1;padding:10px 6px;text-align:center;font-size:10px;
+  color:var(--muted);border-right:1px solid var(--border);transition:all .3s}
+.stage-pill:last-child{border-right:none}
+.stage-pill .stage-name{font-weight:500;display:block}
+.stage-pill .stage-count{font-size:9px;margin-top:2px}
+.stage-pill.active{background:rgba(91,138,240,.1);color:var(--accent)}
+.stage-pill.done{background:rgba(62,207,142,.08);color:var(--green)}
+.stage-pill.error{background:rgba(240,91,91,.08);color:var(--red)}
+.log-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.log-title{font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--muted)}
+.log-stream{background:#060609;border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 16px;height:240px;overflow-y:auto;font-size:12px;line-height:1.7}
+.log-line{display:flex;gap:10px}
+.log-time{color:var(--muted);flex-shrink:0;font-size:10px;padding-top:1px}
+.log-stage{flex-shrink:0;width:90px;font-size:10px;padding-top:1px}
+.log-stage.search{color:var(--accent)}
+.log-stage.screen{color:#c084fc}
+.log-stage.extract{color:var(--amber)}
+.log-stage.quality{color:#fb7185}
+.log-stage.knowledge_graph{color:var(--green)}
+.log-msg{color:var(--text)}
+
+/* results */
+#results-panel{display:none;margin-top:32px}
+#results-panel.visible{display:block}
+.results-header{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+.status-badge{padding:4px 10px;border-radius:20px;font-size:10px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase}
+.status-badge.complete{background:rgba(62,207,142,.15);color:var(--green)}
+.status-badge.error{background:rgba(240,91,91,.15);color:var(--red)}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+  gap:10px;margin-bottom:24px}
+.metric-card{background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px}
+.metric-val{font-family:var(--sans);font-size:28px;font-weight:800;
+  color:var(--accent);line-height:1}
+.metric-label{font-size:10px;color:var(--muted);margin-top:5px}
+.prisma-flow{background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:20px;margin-bottom:20px}
+.prisma-title{font-size:10px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:16px}
+.prisma-row{display:flex;align-items:center;gap:12px;padding:8px 0;
+  border-bottom:1px solid var(--border);font-size:12px}
+.prisma-row:last-child{border-bottom:none}
+.prisma-stage{color:var(--muted);width:260px;flex-shrink:0}
+.prisma-n{font-family:var(--sans);font-weight:700;font-size:18px;color:var(--text);
+  width:60px;text-align:right;flex-shrink:0}
+.prisma-bar-wrap{flex:1;height:4px;background:var(--border);border-radius:2px}
+.prisma-bar{height:4px;border-radius:2px;background:var(--accent);transition:width 1s ease}
+.rq-block{background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:20px;margin-bottom:10px}
+.rq-question{font-size:12px;color:var(--muted);margin-bottom:8px}
+.rq-answer{font-size:13px;color:var(--text);line-height:1.6}
+.download-row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+.btn-download{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;
+  background:var(--surface);border:1px solid var(--border-lit);border-radius:var(--radius);
+  color:var(--text);font-family:var(--mono);font-size:12px;text-decoration:none;
+  transition:border-color .15s,color .15s}
+.btn-download:hover{border-color:var(--accent);color:var(--accent)}
+.neo4j-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;
+  border-radius:20px;font-size:10px;font-weight:600;margin-top:16px}
+.neo4j-badge.ok{background:rgba(62,207,142,.1);color:var(--green)}
+.neo4j-badge.fail{background:rgba(240,91,91,.1);color:var(--red)}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border-lit);border-radius:3px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="logo">Research Assistant</div>
+  <h1>Automated Systematic<br>Literature Review</h1>
+  <p class="sub">
+    Fill in your research question, click Run — the system searches two academic
+    databases, reads the papers, and produces a structured review report automatically.
+  </p>
+</header>
+
+<form id="query-form">
+
+  <!-- Research Question -->
+  <div class="section">
+    <div class="section-label">Your Research Question</div>
+    <div class="field">
+      <label><strong>What do you want to find out?</strong><span class="required"> *</span></label>
+      <textarea name="research_question" rows="2"
+        placeholder="e.g. How do AI tools help automate the process of systematic literature review?"
+        required></textarea>
+      <div class="field-note">Write it as a plain question. The system will turn it into a precise academic search query.</div>
+    </div>
+  </div>
+
+  <!-- Search scope -->
+  <div class="section">
+    <div class="section-label">Search Scope <span style="font-size:10px;text-transform:none;letter-spacing:0;color:var(--muted)">— helps the system search more precisely</span></div>
+
+    <div class="db-info">
+      Your search will run across <strong>two academic databases</strong>:
+      <div class="db-row">
+        <span class="db-badge">📚 PubMed</span>
+        <span style="font-size:11px;color:var(--muted)">World's largest medical &amp; health science database — 37 million papers</span>
+      </div>
+      <div class="db-row">
+        <span class="db-badge">🎓 Semantic Scholar</span>
+        <span style="font-size:11px;color:var(--muted)">Covers computer science, AI, and interdisciplinary research — 200 million papers</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label><strong>What are you studying?</strong>
+        <span class="hint">List synonyms separated by commas</span></label>
+      <input type="text" name="population"
+        placeholder="e.g. systematic review, literature review, evidence synthesis">
+      <div class="field-note">The subject domain — what type of document or setting are you studying?</div>
+    </div>
+
+    <div class="field">
+      <label><strong>What technology or method are you looking at?</strong>
+        <span class="hint">List synonyms separated by commas</span></label>
+      <input type="text" name="intervention"
+        placeholder="e.g. large language model, LLM, GPT, AI agent, machine learning">
+      <div class="field-note">The tool, technique, or approach being evaluated in the papers.</div>
+    </div>
+
+    <div class="grid-2">
+      <div class="field">
+        <label><strong>What are you comparing it to?</strong>
+          <span class="hint">optional</span></label>
+        <input type="text" name="comparison" placeholder="e.g. manual review, human reviewer">
+      </div>
+      <div class="field">
+        <label><strong>What outcome are you measuring?</strong>
+          <span class="hint">use domain-specific terms</span></label>
+        <input type="text" name="outcome" placeholder="e.g. title screening, PRISMA flow, data extraction">
+        <div class="field-note">Avoid generic words like "accuracy" — they match too many unrelated papers.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Advanced settings -->
+  <div class="section">
+    <div class="advanced-toggle" onclick="toggleAdvanced(this)">
+      Advanced Settings
+    </div>
+    <div class="advanced-content">
+      <div class="grid-3">
+        <div class="field">
+          <label><strong>Topic guard keywords</strong>
+            <span class="hint">prevents off-topic results</span></label>
+          <input type="text" name="domain_keywords"
+            placeholder="e.g. systematic review, NLP, PRISMA">
+          <div class="field-note">The AI uses these to filter out suggestions that drift away from your topic.</div>
+        </div>
+        <div class="field">
+          <label><strong>Year range</strong>
+            <span class="hint">optional, e.g. 2018-2024</span></label>
+          <input type="text" name="year_range" placeholder="2018-2024">
+        </div>
+        <div class="field">
+          <label><strong>Max papers per database</strong></label>
+          <input type="number" name="max_papers_per_db" value="200" min="10" max="1000">
+          <div class="field-note">Maximum 1000. Higher = slower but more thorough.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search mode -->
+  <div class="section">
+    <div class="section-label">Search Mode</div>
+    <div class="mode-group">
+      <div class="mode-btn active" data-mode="basic" onclick="setMode('basic')">
+        Standard Search
+        <div class="mode-desc">One-pass · Results in ~2 min</div>
+      </div>
+      <div class="mode-btn" data-mode="iterative" onclick="setMode('iterative')">
+        AI-Assisted Search
+        <div class="mode-desc">Learns from results · Broader coverage · ~5 min</div>
+      </div>
+    </div>
+    <input type="hidden" id="mode-input" name="mode" value="basic">
+    <div class="field-note" style="margin-top:10px">
+      AI-Assisted mode reads the first batch of papers and asks the AI to suggest
+      additional search terms you might have missed, then searches again with those terms.
+    </div>
+  </div>
+
+  <!-- Query preview -->
+  <div id="preview-panel" class="preview-panel">
+    <div class="preview-title">Search strings that will be sent to each database</div>
+    <div class="query-block">
+      <div class="query-label">PubMed search string</div>
+      <div class="query-text" id="preview-pubmed">—</div>
+    </div>
+    <div class="query-block">
+      <div class="query-label">Semantic Scholar search string</div>
+      <div class="query-text" id="preview-s2">—</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:10px;margin-top:20px">
+    <button type="button" class="btn-run btn-secondary" onclick="previewQuery()" style="width:auto;padding:12px 20px">
+      Preview search strings
+    </button>
+    <button type="submit" class="btn-run" id="btn-run">Run Literature Review →</button>
+  </div>
+
+</form>
+
+<!-- Pipeline progress -->
+<div id="pipeline-panel">
+  <div class="pipeline-stages">
+    <div class="stage-pill" id="stage-search">
+      <span class="stage-name">Search</span>
+      <span class="stage-count" id="cnt-search">—</span>
+    </div>
+    <div class="stage-pill" id="stage-screen">
+      <span class="stage-name">Screen</span>
+      <span class="stage-count" id="cnt-screen">—</span>
+    </div>
+    <div class="stage-pill" id="stage-extract">
+      <span class="stage-name">Extract</span>
+      <span class="stage-count" id="cnt-extract">—</span>
+    </div>
+    <div class="stage-pill" id="stage-quality">
+      <span class="stage-name">Quality</span>
+      <span class="stage-count" id="cnt-quality">—</span>
+    </div>
+    <div class="stage-pill" id="stage-knowledge_graph">
+      <span class="stage-name">Knowledge Graph</span>
+      <span class="stage-count" id="cnt-knowledge_graph">—</span>
+    </div>
+  </div>
+  <div class="log-header"><div class="log-title">Live Progress</div></div>
+  <div class="log-stream" id="log-stream"></div>
+</div>
+
+<!-- Results -->
+<div id="results-panel">
+  <div class="results-header">
+    <h2 style="font-family:var(--sans);font-size:20px;font-weight:800">Results</h2>
+    <span class="status-badge complete" id="status-badge">Complete</span>
+  </div>
+
+  <div class="metrics-grid" id="metrics-grid"></div>
+
+  <div class="prisma-flow">
+    <div class="prisma-title">How papers moved through the pipeline (PRISMA flow)</div>
+    <div id="prisma-rows"></div>
+  </div>
+
+  <!-- PRISMA diagram -->
+  <div id="prisma-diagram-section" style="display:none;margin-bottom:24px">
+    <div class="section-label" style="margin-bottom:12px">PRISMA Flow Diagram</div>
+    <img id="prisma-diagram" style="max-width:100%;border:1px solid var(--border);border-radius:6px;display:block" alt="PRISMA diagram">
+  </div>
+
+  <!-- Quality assessment -->
+  <div id="quality-section" style="display:none;margin-bottom:24px">
+    <div class="section-label" style="margin-bottom:12px">Study Quality Assessment (CASP)</div>
+    <div class="metrics-grid" id="quality-metrics"></div>
+  </div>
+
+  <!-- Research questions -->
+  <div id="rq-section" style="display:none;margin-bottom:24px">
+    <div class="section-label" style="margin-bottom:12px">Research Questions Answered</div>
+    <div id="rq-answers"></div>
+  </div>
+
+  <!-- Neo4j badge -->
+  <div id="neo4j-badge" style="display:none"></div>
+
+  <!-- Downloads -->
+  <div id="downloads-section" style="display:none">
+    <div class="section-label" style="margin-bottom:12px">Download Results</div>
+    <div class="download-row">
+      <a id="btn-report" href="#" class="btn-download" style="display:none">
+        📄 Research Report (.md)
+      </a>
+      <a id="btn-diagram" href="#" class="btn-download" style="display:none">
+        🖼 PRISMA Diagram (.png)
+      </a>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+let currentMode = 'basic';
+let currentRunId = null;
+let eventSource  = null;
+
+function setMode(m) {
+  currentMode = m;
+  document.getElementById('mode-input').value = m;
+  document.querySelectorAll('.mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === m);
+  });
+}
+
+function toggleAdvanced(el) {
+  el.classList.toggle('open');
+  const content = el.nextElementSibling;
+  content.classList.toggle('open');
+}
+
+function getFormData() {
+  const fd = new FormData(document.getElementById('query-form'));
+  const obj = {};
+  fd.forEach((v, k) => { obj[k] = v; });
+  return obj;
+}
+
+async function previewQuery() {
+  const body = getFormData();
+  if (!body.research_question) { alert('Enter a research question first.'); return; }
+  const res  = await fetch('/preview_query', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  document.getElementById('preview-pubmed').textContent = data.pubmed_query || '—';
+  document.getElementById('preview-s2').textContent     = data.semantic_query || '—';
+  document.getElementById('preview-panel').classList.add('visible');
+}
+
+document.getElementById('query-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = getFormData();
+  if (!body.research_question.trim()) { alert('Please enter a research question.'); return; }
+
+  document.getElementById('btn-run').disabled = true;
+  document.getElementById('btn-run').textContent = 'Starting…';
+  document.getElementById('pipeline-panel').style.display = 'block';
+  document.getElementById('results-panel').style.display  = 'none';
+  document.getElementById('log-stream').innerHTML = '';
+
+  ['search','screen','extract','quality','knowledge_graph'].forEach(s => {
+    document.getElementById(`stage-${s}`).className = 'stage-pill';
+    document.getElementById(`cnt-${s}`).textContent = '—';
+  });
+
+  const res  = await fetch('/run', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  currentRunId = data.run_id;
+
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource(`/stream/${currentRunId}`);
+
+  eventSource.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'complete') {
+      eventSource.close();
+      if (msg.summary) showResults(msg.summary);
+      document.getElementById('btn-run').disabled = false;
+      document.getElementById('btn-run').textContent = 'Run Literature Review →';
+      return;
+    }
+    appendLog(msg);
+    const pill = document.getElementById(`stage-${msg.stage}`);
+    if (pill) {
+      pill.className = 'stage-pill active';
+      if (msg.count > 0)
+        document.getElementById(`cnt-${msg.stage}`).textContent = msg.count.toLocaleString();
+    }
+    const order = ['search','screen','extract','quality','knowledge_graph'];
+    order.slice(0, order.indexOf(msg.stage)).forEach(s => {
+      const p = document.getElementById(`stage-${s}`);
+      if (p && !p.classList.contains('error')) p.className = 'stage-pill done';
+    });
+  };
+  eventSource.onerror = () => {
+    appendLog({stage:'system', message:'Connection lost — pipeline may still be running.', timestamp: new Date().toISOString()});
+    eventSource.close();
+    document.getElementById('btn-run').disabled = false;
+    document.getElementById('btn-run').textContent = 'Run Literature Review →';
+  };
+});
+
+function appendLog(msg) {
+  const stream = document.getElementById('log-stream');
+  const time = msg.timestamp ? msg.timestamp.substring(11,19) : '';
+  const stage = msg.stage || 'system';
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `
+    <span class="log-time">${time}</span>
+    <span class="log-stage ${stage}">${stage.replace(/_/g,' ')}</span>
+    <span class="log-msg">${esc(msg.message || '')}</span>`;
+  stream.appendChild(line);
+  stream.scrollTop = stream.scrollHeight;
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function showResults(s) {
+  const panel = document.getElementById('results-panel');
+  panel.style.display = 'block';
+  panel.classList.add('visible');
+
+  const p = s.prisma_counts || {};
+  const maxN = p.identified || 1;
+
+  // metric cards
+  const mg = document.getElementById('metrics-grid');
+  mg.innerHTML = '';
+  [
+    [p.identified || 0,  'Papers Found'],
+    [p.screened    || 0, 'Papers Screened'],
+    [p.included    || 0, 'Papers Included'],
+    [p.extracted   || 0, 'Data Extracted'],
+  ].forEach(([v, label]) => {
+    const c = document.createElement('div');
+    c.className = 'metric-card';
+    c.innerHTML = `<div class="metric-val">${v.toLocaleString()}</div><div class="metric-label">${label}</div>`;
+    mg.appendChild(c);
+  });
+
+  // PRISMA rows — plain language labels
+  const rows = document.getElementById('prisma-rows');
+  rows.innerHTML = '';
+  [
+    ['Papers found (PubMed + Semantic Scholar)',     p.identified    || 0],
+    ['Checked by title and abstract',                p.screened      || 0],
+    ['  → Excluded at this stage',                   p.excluded_ta   || 0],
+    ['  → Uncertain (needs human review)',            p.uncertain     || 0],
+    ['Checked by full text',                         p.sent_to_fulltext || 0],
+    ['  → No free PDF available',                    p.no_pdf        || 0],
+    ['  → Excluded at full text',                    p.excluded_ft   || 0],
+    ['Included in the review',                       p.included      || 0],
+    ['Data successfully extracted',                  p.extracted     || 0],
+  ].forEach(([label, n]) => {
+    const row = document.createElement('div');
+    row.className = 'prisma-row';
+    const pct = Math.round((n / maxN) * 100);
+    row.innerHTML = `
+      <div class="prisma-stage">${label}</div>
+      <div class="prisma-n">${n.toLocaleString()}</div>
+      <div class="prisma-bar-wrap"><div class="prisma-bar" style="width:${pct}%"></div></div>`;
+    rows.appendChild(row);
+  });
+
+  // PRISMA diagram
+  if (s.prisma_diagram_path) {
+    const img = document.getElementById('prisma-diagram');
+    img.src = `/diagram/${currentRunId}?t=${Date.now()}`;
+    document.getElementById('prisma-diagram-section').style.display = 'block';
+  }
+
+  // quality
+  const qs = s.quality_summary || {};
+  if (qs.total_assessed > 0) {
+    document.getElementById('quality-section').style.display = 'block';
+    const qm = document.getElementById('quality-metrics');
+    qm.innerHTML = '';
+    [
+      [qs.high || 0,     'High Quality'],
+      [qs.moderate || 0, 'Moderate Quality'],
+      [qs.low || 0,      'Low Quality'],
+      [(qs.avg_overall_score || 0).toFixed(2), 'Average Score'],
+    ].forEach(([v, label]) => {
+      const c = document.createElement('div');
+      c.className = 'metric-card';
+      c.innerHTML = `<div class="metric-val">${v}</div><div class="metric-label">${label}</div>`;
+      qm.appendChild(c);
+    });
+  }
+
+  // research questions
+  const rq = s.rq_answers || {};
+  if (Object.keys(rq).length > 0) {
+    document.getElementById('rq-section').style.display = 'block';
+    const rqEl = document.getElementById('rq-answers');
+    rqEl.innerHTML = '';
+    Object.entries(rq).forEach(([q, a]) => {
+      const ans = typeof a === 'object' ? (a.answer || '—') : String(a);
+      const b = document.createElement('div');
+      b.className = 'rq-block';
+      b.innerHTML = `<div class="rq-question">${esc(q)}</div><div class="rq-answer">${esc(ans)}</div>`;
+      rqEl.appendChild(b);
+    });
+  }
+
+  // Neo4j badge
+  const nbadge = document.getElementById('neo4j-badge');
+  if (s.neo4j_verified === true) {
+    const gs = s.neo4j_stats || {};
+    nbadge.innerHTML = `<div class="neo4j-badge ok">✅ Knowledge Graph — ${gs.papers_in_graph || 0} papers, ${gs.extractions_in_graph || 0} data points stored in Neo4j</div>`;
+    nbadge.style.display = 'block';
+  } else if (s.neo4j_verified === false) {
+    nbadge.innerHTML = `<div class="neo4j-badge fail">⚠️ Knowledge graph not connected — check Neo4j Desktop is running</div>`;
+    nbadge.style.display = 'block';
+  }
+
+  // downloads
+  const dsec = document.getElementById('downloads-section');
+  const btnR  = document.getElementById('btn-report');
+  const btnD  = document.getElementById('btn-diagram');
+  let showDownloads = false;
+
+  if (s.report_path) {
+    btnR.href = `/report/${currentRunId}`;
+    btnR.style.display = 'inline-flex';
+    showDownloads = true;
+  }
+  if (s.prisma_diagram_path) {
+    btnD.href = `/diagram/${currentRunId}`;
+    btnD.style.display = 'inline-flex';
+    showDownloads = true;
+  }
+  if (showDownloads) dsec.style.display = 'block';
+
+  // mark all stages done
+  ['search','screen','extract','quality','knowledge_graph'].forEach(s => {
+    document.getElementById(`stage-${s}`).className = 'stage-pill done';
+  });
+}
+</script>
+</body>
+</html>

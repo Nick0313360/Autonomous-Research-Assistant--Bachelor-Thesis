@@ -1,6 +1,6 @@
 from abc import ABC
 from typing import List
-from model.Paper import Paper
+from module1.model.Paper import Paper
 
 class BaseConnector(ABC):
     def __init__(self, apiKey: str, baseUrl: str):

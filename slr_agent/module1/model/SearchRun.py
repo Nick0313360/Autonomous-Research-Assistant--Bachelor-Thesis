@@ -1,10 +1,10 @@
+import uuid
 from typing import List
 from datetime import datetime
-import uuid
-from model.Paper import Paper
-from model.SearchQuery import SearchQuery
-from model.SearchIteration import SearchIteration
+from module1.model.Paper import Paper
+from module1.model.SearchQuery import SearchQuery
 from pydantic import BaseModel, Field, field_validator
+from module1.model.SearchIteration import SearchIteration
 
 class SearchRun(BaseModel):
     runId: str = Field(default_factory=lambda: str(uuid.uuid4()))

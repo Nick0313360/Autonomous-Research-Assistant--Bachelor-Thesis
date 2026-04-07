@@ -1,7 +1,7 @@
 from typing import List, Optional
-from model.Paper import Paper
-from model.RefinementResult import RefinementResult
+from module1.model.Paper import Paper
 from pydantic import BaseModel, field_validator
+from module1.model.RefinementResult import RefinementResult
 
 
 class SearchIteration(BaseModel):

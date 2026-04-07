@@ -1,59 +1,7 @@
-module1/
-│
-├── models/
-│   ├── __init__.py
-│   ├── SearchQuery.py
-│   ├── Paper.py
-│   ├── SearchRun.py           # SearchRun + SearchIteration
-│   ├── RefinementResult.py    # RefinementResult + TermDecision
-│
-├── connectors/
-│   ├── __init__.py
-│   ├── BaseConnector.py
-│   ├── PubMedConnector.py
-│   ├── SemanticScholarConnector.py
-│   ├── LlmConnector.py
-│   └── QueryBuilder.py
-│
-├── services/
-│   ├── __init__.py
-│   ├── DeduplicationService.py
-│   ├── DomainValidator.py
-│   ├── PaperSampler.py
-│   └── LlmRefinementService.py
-│
-└── orchestrator/
-    ├── __init__.py
-    └── SearchService.py
-
-
-
-module1/
-│
-├── models/
-│   ├── __init__.py
-│   ├── SearchQuery.py
-│   ├── Paper.py
-│   ├── TermDecision.py
-│   ├── RefinementResult.py
-│   ├── SearchIteration.py
-│   └── SearchRun.py
-│
-├── connectors/
-│   ├── __init__.py
-│   ├── BaseConnector.py
-│   ├── PubMedConnector.py
-│   ├── SemanticScholarConnector.py
-│   ├── LlmConnector.py
-│   └── QueryBuilder.py
-│
-├── services/
-│   ├── __init__.py
-│   ├── DeduplicationService.py
-│   ├── DomainValidator.py
-│   ├── PaperSampler.py
-│   └── LlmRefinementService.py
-│
-└── orchestrator/
-    ├── __init__.py
-    └── SearchService.py
+pydantic==2.7
+rapidfuzz==3.9.0
+openai>=1.30.0
+requests==2.32.3
+pdfminer.six==20231228
+pandas==2.2.2
+tqdm==4.66.5

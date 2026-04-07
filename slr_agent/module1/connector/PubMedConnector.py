@@ -4,8 +4,8 @@ from typing import List, Optional
 
 from Bio import Entrez, Medline
 
-from connector.BaseConnector import BaseConnector
-from model.Paper import Paper
+from module1.connector.BaseConnector import BaseConnector
+from module1.model.Paper import Paper
 
 logger = logging.getLogger(__name__)
 

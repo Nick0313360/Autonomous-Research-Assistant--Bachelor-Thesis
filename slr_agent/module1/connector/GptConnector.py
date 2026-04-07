@@ -1,7 +1,7 @@
 import time
 import logging
 from openai import OpenAI
-from connector.BaseConnector import BaseConnector
+from module1.connector.BaseConnector import BaseConnector
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +36,6 @@ class GptConnector(BaseConnector):
         return self.__temperature
 
     def callLlm(self, prompt: str, systemMessage: str) -> str:
-        """
-        Send one prompt to the LLM and return the raw string response.
-        Retries up to maxRetries times with exponential backoff on failure.
-        Returns empty string if all retries fail — never raises to caller.
-        """
         for attempt in range(1, self.__maxRetries + 1):
             try:
                 response = self.__client.chat.completions.create(
@@ -63,7 +58,6 @@ class GptConnector(BaseConnector):
                 else:
                     logger.error("GptConnector: all retries exhausted")
                     return ""
-
 
 # DELETE BEFORE PRODUCTION — smoke test
 # run: python -m module1.connectors.GptConnector

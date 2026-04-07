@@ -1,5 +1,5 @@
 from typing import List
-from model.Paper import Paper
+from module1.model.Paper import Paper
 
 
 class PaperSampler:

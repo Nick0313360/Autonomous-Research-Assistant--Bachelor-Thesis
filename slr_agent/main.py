@@ -1,19 +1,19 @@
 import os
 import logging
-from dotenv import load_dotenv
 
-from model.SearchQuery import SearchQuery
-from data.PrismaLog import PrismaLog
-from connector.PubMedConnector import PubMedConnector
-from connector.SemanticScholarConnector import SemanticScholarConnector
-from connector.GptConnector import GptConnector
-from services.DeduplicationService import DeduplicationService
-from services.DomainValidator import DomainValidator
-from services.PaperSampler import PaperSampler
-from services.LLMRefinerService import LLMRefinerService
+from module1.model.SearchQuery import SearchQuery
+from module1.data.PrismaLog import PrismaLog
+from module1.connector.PubMedConnector import PubMedConnector
+from module1.connector.SemanticScholarConnector import SemanticScholarConnector
+from module1.connector.GptConnector import GptConnector
+from module1.services.DeduplicationService import DeduplicationService
+from module1.services.DomainValidator import DomainValidator
+from module1.services.PaperSampler import PaperSampler
+from module1.services.LLMRefinerService import LLMRefinerService
 from orchestrator.SearchService import SearchService
 
-load_dotenv()
+from dotenv import load_dotenv
+load_dotenv()  # automatically loads .env in project root
 
 logging.basicConfig(
     level=logging.INFO,
@@ -134,11 +134,11 @@ def main():
 
     print("\nStarting Module 1 — Search and Iterative Refinement")
     print(f"Research question: {searchQuery.researchQuestion}")
-    print(f"Mode: iterative")
+    
+    mode_v = "basic"
+    searchRun = searchService.runSearch(searchQuery=searchQuery, mode= mode_v)
+    print(f"Mode: {mode_v}")
     print("-" * 60)
-
-    searchRun = searchService.runSearch(searchQuery=searchQuery, mode="iterative")
-
     prisma = PrismaLog.getInstance()
     prisma.runId = searchRun.runId
 

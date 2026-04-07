@@ -1,14 +1,13 @@
 import logging
-from typing import List, Set, Optional
-
-from connector.GptConnector import GptConnector
-from model.Paper import Paper
-from model.SearchQuery import SearchQuery
-from model.RefinementResult import RefinementResult
-from model.TermDecision import TermDecision
-from services.DomainValidator import DomainValidator
-from services.PaperSampler import PaperSampler
 import unicodedata
+from module1.model.Paper import Paper
+from typing import List, Set, Optional
+from module1.model.SearchQuery import SearchQuery
+from module1.model.TermDecision import TermDecision
+from module1.services.PaperSampler import PaperSampler
+from module1.connector.GptConnector import GptConnector
+from module1.model.RefinementResult import RefinementResult
+from module1.services.DomainValidator import DomainValidator
 
 logger = logging.getLogger(__name__)
 

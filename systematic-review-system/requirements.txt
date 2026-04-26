@@ -14,3 +14,5 @@ torch>=2.0.0
 transformers>=4.35.0
 aiohttp>=3.9.0
 biopython>=1.81
+pandas>=2.0
+pyarrow>=14.0

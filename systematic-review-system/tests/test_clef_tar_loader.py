@@ -80,3 +80,18 @@ def test_load_topic_bad_id_raises(fake_data_dir: Path) -> None:
 def test_load_topic_missing_dir_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match=r"2019-TAR"):
         load_topic("CD008874", tmp_path)
+
+
+from cascade_rc.data.clef_tar_loader import download_clef_tar_2019
+
+
+def test_download_is_idempotent(tmp_path: Path) -> None:
+    """If 2019-TAR already exists, download_clef_tar_2019 must be a no-op."""
+    existing = tmp_path / "2019-TAR"
+    existing.mkdir()
+    sentinel = existing / "sentinel.txt"
+    sentinel.write_text("do not delete", encoding="utf-8")
+
+    download_clef_tar_2019(tmp_path)  # must not wipe or re-clone
+
+    assert sentinel.exists(), "idempotent check failed — 2019-TAR was overwritten"

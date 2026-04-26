@@ -1,6 +1,9 @@
 """CLEF-TAR 2019 benchmark ingestion for CASCADE-RC validation."""
 from __future__ import annotations
 
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,6 +53,44 @@ def _parse_qrels(path: Path, topic_id: str) -> dict[str, int]:
         if len(parts) >= 4 and parts[0] == topic_id:
             qrels[parts[2]] = int(parts[3])
     return qrels
+
+
+def download_clef_tar_2019(target_dir: Path) -> None:
+    """Sparse-clone the 2019-TAR subtree from CLEF-TAR/tar into target_dir.
+
+    Idempotent: exits immediately if target_dir/2019-TAR already exists.
+    Raises RuntimeError if git returns a non-zero exit code.
+    """
+    if (target_dir / "2019-TAR").exists():
+        return
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        clone_dir = Path(tmp) / "tar"
+
+        result = subprocess.run(
+            [
+                "git", "clone",
+                "--depth=1", "--filter=blob:none", "--sparse",
+                _REPO_URL, str(clone_dir),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"git clone failed:\n{result.stderr}")
+
+        result = subprocess.run(
+            ["git", "sparse-checkout", "set", "2019-TAR"],
+            cwd=str(clone_dir),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"git sparse-checkout failed:\n{result.stderr}")
+
+        shutil.move(str(clone_dir / "2019-TAR"), str(target_dir / "2019-TAR"))
 
 
 def load_topic(topic_id: str, data_dir: Path) -> Topic:

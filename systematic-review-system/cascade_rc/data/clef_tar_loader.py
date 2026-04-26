@@ -9,6 +9,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ def download_clef_tar_2019(target_dir: Path) -> None:
         shutil.move(str(clone_dir / "2019-TAR"), str(target_dir / "2019-TAR"))
 
 
-def fetch_abstracts(pmids: list[str], cache_dir: Path) -> dict[str, dict]:
+def fetch_abstracts(pmids: list[str], cache_dir: Path) -> dict[str, dict[str, Any]]:
     """Fetch title+abstract for each PMID from PubMed, caching results in
     cache_dir/abstracts.jsonl (one JSON object per line, keyed by 'pmid').
 
@@ -188,7 +189,7 @@ def load_topic(topic_id: str, data_dir: Path) -> Topic:
     )
 
 
-def _write_parquet(rows: list[dict], path: Path) -> None:
+def _write_parquet(rows: list[dict[str, Any]], path: Path) -> None:
     import pandas as pd
     df = pd.DataFrame(rows, columns=["pmid", "title", "abstract", "y_abstract"])
     df["y_abstract"] = df["y_abstract"].astype("int8")
@@ -263,6 +264,12 @@ def main() -> None:
             f"{topic_id}  total={total}  pos={n_pos}  neg={n_neg}"
             f"  prevalence={prevalence:.4f}"
         )
+        if total == 0:
+            import sys
+            print(
+                f"WARNING: {topic_id} produced 0 rows — check Entrez credentials and network.",
+                file=sys.stderr,
+            )
 
 
 if __name__ == "__main__":

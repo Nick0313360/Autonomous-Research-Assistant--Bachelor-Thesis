@@ -126,6 +126,8 @@ def fetch_abstracts(pmids: list[str], cache_dir: Path) -> dict[str, dict[str, An
 
         new_records: list[dict] = []
         for start in range(0, len(missing), _CHUNK_SIZE):
+            if start > 0:
+                time.sleep(0.35)
             chunk = missing[start : start + _CHUNK_SIZE]
             try:
                 handle = Entrez.efetch(
@@ -147,7 +149,6 @@ def fetch_abstracts(pmids: list[str], cache_dir: Path) -> dict[str, dict[str, An
                     handle.close()
             except Exception as exc:
                 logger.warning("fetch_abstracts: chunk at offset %d failed: %s", start, exc)
-            time.sleep(0.35)
 
         if new_records:
             with cache_path.open("a", encoding="utf-8") as f:
@@ -176,6 +177,8 @@ def load_topic(topic_id: str, data_dir: Path) -> Topic:
 
     if not topic_path.exists():
         raise FileNotFoundError(f"Topic file not found: {topic_path}")
+    if not qrels_path.exists():
+        raise FileNotFoundError(f"Qrels file not found: {qrels_path}. Re-run download.")
 
     title, boolean_query, candidate_pmids = _parse_topic_file(topic_path)
     qrels_abstract = _parse_qrels(qrels_path, topic_id)
@@ -207,8 +210,7 @@ def main() -> None:
         action="append",
         dest="topics",
         choices=sorted(_ALLOWED_TOPICS),
-        metavar="TOPIC_ID",
-        help="Topic ID to process (repeatable). Default: all three.",
+        help=f"Topic ID to process (repeatable). Choices: {sorted(_ALLOWED_TOPICS)}. Default: all three.",
     )
     parser.add_argument(
         "--out",

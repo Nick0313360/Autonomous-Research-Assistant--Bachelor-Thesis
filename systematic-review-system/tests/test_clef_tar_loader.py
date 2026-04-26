@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -10,7 +9,7 @@ _REPO_ROOT = Path(__file__).parent.parent.resolve()
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from cascade_rc.data.clef_tar_loader import Topic, load_topic
+from cascade_rc.data.clef_tar_loader import load_topic
 
 # ---------------------------------------------------------------------------
 # Fixtures

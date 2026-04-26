@@ -1,16 +1,8 @@
 """CLEF-TAR 2019 benchmark ingestion for CASCADE-RC validation."""
 from __future__ import annotations
 
-import json
-import subprocess
-import tempfile
-import shutil
-import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-
-from Bio import Entrez, Medline
 
 _ALLOWED_TOPICS: frozenset[str] = frozenset({"CD008874", "CD012080", "CD012768"})
 _DTA_BASE = Path("2019-TAR") / "Task2" / "Testing" / "DTA"

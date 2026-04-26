@@ -79,5 +79,5 @@ def test_load_topic_bad_id_raises(fake_data_dir: Path) -> None:
 
 
 def test_load_topic_missing_dir_raises(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(FileNotFoundError, match=r"2019-TAR"):
         load_topic("CD008874", tmp_path)

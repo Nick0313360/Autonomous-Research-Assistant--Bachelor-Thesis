@@ -3,11 +3,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 _REPO_ROOT = Path(__file__).parent.parent.resolve()
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
+
+_PARQUET_DIR = _REPO_ROOT / "data" / "clef_tar"
 
 from cascade_rc.data.clef_tar_loader import download_clef_tar_2019, fetch_abstracts, load_topic
 
@@ -129,3 +132,39 @@ def test_fetch_abstracts_creates_cache_dir(tmp_path: Path) -> None:
     cache_dir = tmp_path / "new_cache"
     fetch_abstracts([], cache_dir)
     assert cache_dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# Integration: parquet output (skips if CLI has not been run yet)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("topic_id", ["CD008874", "CD012080", "CD012768"])
+def test_minimum_positives(topic_id: str) -> None:
+    path = _PARQUET_DIR / f"{topic_id}.parquet"
+    if not path.exists():
+        pytest.skip(f"{path} not yet generated — run the CLI first")
+    df = pd.read_parquet(path)
+    assert int(df["y_abstract"].sum()) >= 26, (
+        f"{topic_id}: only {int(df['y_abstract'].sum())} positives, need ≥ 26"
+    )
+
+
+@pytest.mark.parametrize("topic_id", ["CD008874", "CD012080", "CD012768"])
+def test_no_empty_title_or_abstract(topic_id: str) -> None:
+    path = _PARQUET_DIR / f"{topic_id}.parquet"
+    if not path.exists():
+        pytest.skip(f"{path} not yet generated — run the CLI first")
+    df = pd.read_parquet(path)
+    assert (df["title"] != "").all(), f"{topic_id}: contains rows with empty title"
+    assert (df["abstract"] != "").all(), f"{topic_id}: contains rows with empty abstract"
+
+
+@pytest.mark.parametrize("topic_id", ["CD008874", "CD012080", "CD012768"])
+def test_y_abstract_binary(topic_id: str) -> None:
+    path = _PARQUET_DIR / f"{topic_id}.parquet"
+    if not path.exists():
+        pytest.skip(f"{path} not yet generated — run the CLI first")
+    df = pd.read_parquet(path)
+    assert set(df["y_abstract"].unique()).issubset({0, 1}), (
+        f"{topic_id}: y_abstract contains values outside {{0, 1}}"
+    )

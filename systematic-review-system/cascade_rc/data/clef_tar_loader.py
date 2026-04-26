@@ -186,3 +186,84 @@ def load_topic(topic_id: str, data_dir: Path) -> Topic:
         candidate_pmids=candidate_pmids,
         qrels_abstract=qrels_abstract,
     )
+
+
+def _write_parquet(rows: list[dict], path: Path) -> None:
+    import pandas as pd
+    df = pd.DataFrame(rows, columns=["pmid", "title", "abstract", "y_abstract"])
+    df["y_abstract"] = df["y_abstract"].astype("int8")
+    df.to_parquet(path, index=False)
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Ingest CLEF-TAR 2019 DTA topics into parquet for CASCADE-RC."
+    )
+    parser.add_argument(
+        "--topic",
+        action="append",
+        dest="topics",
+        choices=sorted(_ALLOWED_TOPICS),
+        metavar="TOPIC_ID",
+        help="Topic ID to process (repeatable). Default: all three.",
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="Output directory for parquet files and abstract cache.",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="Directory containing the 2019-TAR/ tree (default: same as --out).",
+    )
+    parser.add_argument(
+        "--skip-download",
+        action="store_true",
+        help="Skip download_clef_tar_2019 (use when data already present).",
+    )
+    args = parser.parse_args()
+
+    topics: list[str] = args.topics or sorted(_ALLOWED_TOPICS)
+    data_dir: Path = args.data_dir or args.out
+
+    if not args.skip_download:
+        download_clef_tar_2019(data_dir)
+
+    args.out.mkdir(parents=True, exist_ok=True)
+
+    for topic_id in topics:
+        topic = load_topic(topic_id, data_dir)
+        abstracts = fetch_abstracts(topic.candidate_pmids, args.out / "cache")
+
+        rows: list[dict] = []
+        for pmid, qrel in topic.qrels_abstract.items():
+            if pmid in abstracts:
+                rows.append(
+                    {
+                        "pmid": pmid,
+                        "title": abstracts[pmid]["title"],
+                        "abstract": abstracts[pmid]["abstract"],
+                        "y_abstract": qrel,
+                    }
+                )
+
+        out_path = args.out / f"{topic_id}.parquet"
+        _write_parquet(rows, out_path)
+
+        n_pos = sum(1 for r in rows if r["y_abstract"] == 1)
+        n_neg = sum(1 for r in rows if r["y_abstract"] == 0)
+        total = len(rows)
+        prevalence = n_pos / total if total else 0.0
+        print(
+            f"{topic_id}  total={total}  pos={n_pos}  neg={n_neg}"
+            f"  prevalence={prevalence:.4f}"
+        )
+
+
+if __name__ == "__main__":
+    main()

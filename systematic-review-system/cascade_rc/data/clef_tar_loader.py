@@ -1,9 +1,11 @@
 """CLEF-TAR 2019 benchmark ingestion for CASCADE-RC validation."""
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -93,6 +95,66 @@ def download_clef_tar_2019(target_dir: Path) -> None:
         shutil.move(str(clone_dir / "2019-TAR"), str(target_dir / "2019-TAR"))
 
 
+def fetch_abstracts(pmids: list[str], cache_dir: Path) -> dict[str, dict]:
+    """Fetch title+abstract for each PMID from PubMed, caching results in
+    cache_dir/abstracts.jsonl (one JSON object per line, keyed by 'pmid').
+
+    Reuses PubMedConnector to configure Entrez credentials from env/.env.
+    PMIDs with no title or no abstract are excluded from the returned dict.
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / "abstracts.jsonl"
+
+    cache: dict[str, dict] = {}
+    if cache_path.exists():
+        for line in cache_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line:
+                rec = json.loads(line)
+                cache[rec["pmid"]] = rec
+
+    missing = [p for p in pmids if p not in cache]
+
+    if missing:
+        from Bio import Entrez, Medline
+        from tier1_search.pubmed_connector import PubMedConnector
+        PubMedConnector()  # configures Entrez.email + Entrez.api_key from env
+
+        new_records: list[dict] = []
+        for start in range(0, len(missing), _CHUNK_SIZE):
+            chunk = missing[start : start + _CHUNK_SIZE]
+            try:
+                handle = Entrez.efetch(
+                    db="pubmed",
+                    id=chunk,
+                    rettype="medline",
+                    retmode="text",
+                )
+                for rec in Medline.parse(handle):
+                    pmid = rec.get("PMID", "").strip()
+                    title = rec.get("TI", "").strip()
+                    abstract = rec.get("AB", "").strip()
+                    if pmid:
+                        entry = {"pmid": pmid, "title": title, "abstract": abstract}
+                        cache[pmid] = entry
+                        new_records.append(entry)
+                handle.close()
+            except Exception:
+                pass  # recall-safe: missing records are dropped
+            time.sleep(0.35)
+
+        if new_records:
+            with cache_path.open("a", encoding="utf-8") as f:
+                for rec in new_records:
+                    f.write(json.dumps(rec) + "\n")
+
+    return {
+        p: cache[p]
+        for p in pmids
+        if p in cache and cache[p].get("title") and cache[p].get("abstract")
+    }
+
+
 def load_topic(topic_id: str, data_dir: Path) -> Topic:
     """Parse a CLEF-TAR 2019 DTA topic from data_dir/2019-TAR/Task2/Testing/DTA/."""
     if topic_id not in _ALLOWED_TOPICS:
@@ -105,6 +167,9 @@ def load_topic(topic_id: str, data_dir: Path) -> Topic:
 
     topic_path = base / "topics" / topic_id
     qrels_path = base / "qrels" / _QRELS_FILE
+
+    if not topic_path.exists():
+        raise FileNotFoundError(f"Topic file not found: {topic_path}")
 
     title, boolean_query, candidate_pmids = _parse_topic_file(topic_path)
     qrels_abstract = _parse_qrels(qrels_path, topic_id)

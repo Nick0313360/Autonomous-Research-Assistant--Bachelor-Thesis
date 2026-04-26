@@ -9,7 +9,7 @@ _REPO_ROOT = Path(__file__).parent.parent.resolve()
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from cascade_rc.data.clef_tar_loader import download_clef_tar_2019, load_topic
+from cascade_rc.data.clef_tar_loader import download_clef_tar_2019, fetch_abstracts, load_topic
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -92,3 +92,40 @@ def test_download_is_idempotent(tmp_path: Path) -> None:
     download_clef_tar_2019(tmp_path)  # must not wipe or re-clone
 
     assert sentinel.exists(), "idempotent check failed — 2019-TAR was overwritten"
+
+
+# ---------------------------------------------------------------------------
+# Unit: fetch_abstracts
+# ---------------------------------------------------------------------------
+
+def test_fetch_abstracts_cache_hit(tmp_path: Path) -> None:
+    """PMIDs already in abstracts.jsonl must not trigger a network call."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir / "abstracts.jsonl").write_text(
+        '{"pmid": "12345678", "title": "Test Title", "abstract": "Test abstract"}\n',
+        encoding="utf-8",
+    )
+
+    result = fetch_abstracts(["12345678"], cache_dir)
+
+    assert "12345678" in result
+    assert result["12345678"]["title"] == "Test Title"
+    assert result["12345678"]["abstract"] == "Test abstract"
+
+
+def test_fetch_abstracts_missing_pmid_not_in_result(tmp_path: Path) -> None:
+    """Empty PMID list returns empty dict — no network call."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir / "abstracts.jsonl").write_text("", encoding="utf-8")
+
+    result = fetch_abstracts([], cache_dir)
+    assert result == {}
+
+
+def test_fetch_abstracts_creates_cache_dir(tmp_path: Path) -> None:
+    """fetch_abstracts must create cache_dir if it does not exist."""
+    cache_dir = tmp_path / "new_cache"
+    fetch_abstracts([], cache_dir)
+    assert cache_dir.exists()

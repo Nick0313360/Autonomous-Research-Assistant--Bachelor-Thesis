@@ -9,7 +9,7 @@ _REPO_ROOT = Path(__file__).parent.parent.resolve()
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from cascade_rc.data.clef_tar_loader import load_topic
+from cascade_rc.data.clef_tar_loader import download_clef_tar_2019, load_topic
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -80,9 +80,6 @@ def test_load_topic_bad_id_raises(fake_data_dir: Path) -> None:
 def test_load_topic_missing_dir_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match=r"2019-TAR"):
         load_topic("CD008874", tmp_path)
-
-
-from cascade_rc.data.clef_tar_loader import download_clef_tar_2019
 
 
 def test_download_is_idempotent(tmp_path: Path) -> None:

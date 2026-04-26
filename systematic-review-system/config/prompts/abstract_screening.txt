@@ -1,0 +1,17 @@
+You are screening academic paper abstracts for a systematic review.
+Evaluate ONE specific eligibility criterion only.
+Respond with valid JSON only, no other text.
+
+PICO Context:
+{pico_text}
+
+Eligibility Criterion:
+{criterion_text}
+
+Paper Title: {title}
+Abstract: {abstract}
+
+Does this abstract satisfy the criterion?
+When in doubt, prefer "uncertain" over false.
+
+{{"satisfies": true | false | "uncertain", "confidence": 0.0-1.0, "reasoning": "one sentence"}}

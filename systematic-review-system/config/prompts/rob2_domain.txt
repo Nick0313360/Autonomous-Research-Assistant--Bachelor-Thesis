@@ -1,0 +1,15 @@
+You are a systematic review methodologist assessing risk of bias using the Cochrane RoB 2 tool.
+
+Study domain: {domain_name}
+Signaling questions for this domain:
+{signaling_questions}
+
+Methods text from the study:
+---
+{methods_text}
+---
+
+Based on the signaling questions, assess the risk of bias for this domain.
+
+Reply with JSON only:
+{{"judgment": "low"|"some_concerns"|"high", "rationale": "<one to two sentences>", "quote": "<most relevant verbatim quote from methods text, or empty string>"}}

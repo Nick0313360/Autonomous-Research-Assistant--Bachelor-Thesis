@@ -127,7 +127,7 @@ class SemanticScholarConnector(BaseConnector):
 
 # ─────────────────────────────────────────────────────────────
 # DELETE BEFORE PRODUCTION — quick smoke test
-# run: python -m module1.connectors.SemanticScholarConnector
+# run: python -m module1.connector.SemanticScholarConnector
 # ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

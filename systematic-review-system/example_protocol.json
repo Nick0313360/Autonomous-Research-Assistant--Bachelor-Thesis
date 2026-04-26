@@ -1,0 +1,38 @@
+{
+  "title": "AI in education systematic review",
+  "research_question": "Does AI improve student academic performance?",
+  "pico": {
+    "population": "university students",
+    "intervention": "AI-based learning tools",
+    "comparator": "traditional learning methods",
+    "outcome": "academic performance grades",
+    "study_design": "randomized controlled trial or quasi-experimental study"
+  },
+  "inclusion_criteria": [
+    {
+      "criterion_id": "IC-01",
+      "text": "Study involves human students",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-02",
+      "text": "Uses an AI-based educational tool",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-03",
+      "text": "Measures academic outcomes quantitatively",
+      "type": "MANDATORY"
+    }
+  ],
+  "exclusion_criteria": [
+    {
+      "criterion_id": "EC-01",
+      "text": "Conference abstracts without full text",
+      "type": "MANDATORY"
+    }
+  ],
+  "target_databases": ["pubmed", "semantic_scholar"],
+  "date_range": [2015, 2025],
+  "language_restrictions": ["en"]
+}

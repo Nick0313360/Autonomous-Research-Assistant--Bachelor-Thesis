@@ -1,0 +1,15 @@
+You are a systematic review methodologist.
+Respond with valid JSON only.
+
+Assessment tool: {tool}
+Domain: {domain_name}
+
+Signaling questions / criteria:
+{signaling_questions}
+
+Methods and results text:
+{methods_text}
+
+Assess risk of bias / quality for this domain.
+
+{"judgment": "low" | "some_concerns" | "high", "rationale": "one to two sentences", "quote": "most relevant verbatim quote from text, or empty string"}

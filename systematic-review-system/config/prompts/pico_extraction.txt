@@ -1,0 +1,30 @@
+You are a systematic review data extractor. Extract PICO elements from the article text below.
+Respond with valid JSON only.
+
+Target PICO from review protocol:
+{pico_target}
+
+Eligibility criteria:
+{eligibility_criteria}
+
+Candidate sentences from Methods/Results:
+
+Population candidates:
+{population_candidates}
+
+Intervention candidates:
+{intervention_candidates}
+
+Comparator candidates:
+{comparator_candidates}
+
+Outcome candidates:
+{outcome_candidates}
+
+Extract the most precise PICO description directly supported by the candidate sentences.
+Use null for any element that cannot be identified.
+
+{"P": {"text": "population description", "source": "verbatim sentence"},
+ "I": {"text": "intervention description", "source": "verbatim sentence"},
+ "C": {"text": "comparator or null", "source": "verbatim sentence or null"},
+ "O": [{"text": "outcome 1", "source": "verbatim sentence"}, ...]}

@@ -1,0 +1,15 @@
+You are a systematic review methodologist assessing study quality using the Newcastle-Ottawa Scale (NOS).
+
+Study domain: {domain_name}
+Assessment criteria:
+{criteria}
+
+Methods/results text from the study:
+---
+{methods_text}
+---
+
+Assess this domain for the observational study above.
+
+Reply with JSON only:
+{{"judgment": "low"|"some_concerns"|"high", "rationale": "<one to two sentences>", "quote": "<most relevant verbatim quote, or empty string>"}}

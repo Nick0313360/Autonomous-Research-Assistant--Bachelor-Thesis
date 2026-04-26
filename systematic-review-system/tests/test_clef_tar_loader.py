@@ -85,6 +85,17 @@ def test_load_topic_missing_dir_raises(tmp_path: Path) -> None:
         load_topic("CD008874", tmp_path)
 
 
+def test_load_topic_missing_qrels_raises(tmp_path: Path) -> None:
+    dta = tmp_path / "2019-TAR" / "Task2" / "Testing" / "DTA"
+    (dta / "topics").mkdir(parents=True)
+    (dta / "qrels").mkdir(parents=True)
+    (dta / "topics" / "CD008874").write_text(
+        "Title: T\nQuery:\nPids:\n11111111\n", encoding="utf-8"
+    )
+    with pytest.raises(FileNotFoundError, match="qrels"):
+        load_topic("CD008874", tmp_path)
+
+
 def test_download_is_idempotent(tmp_path: Path) -> None:
     """If 2019-TAR already exists, download_clef_tar_2019 must be a no-op."""
     existing = tmp_path / "2019-TAR"

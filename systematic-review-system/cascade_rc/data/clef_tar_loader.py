@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import subprocess
 import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 _ALLOWED_TOPICS: frozenset[str] = frozenset({"CD008874", "CD012080", "CD012768"})
 _DTA_BASE = Path("2019-TAR") / "Task2" / "Testing" / "DTA"
@@ -130,17 +133,19 @@ def fetch_abstracts(pmids: list[str], cache_dir: Path) -> dict[str, dict]:
                     rettype="medline",
                     retmode="text",
                 )
-                for rec in Medline.parse(handle):
-                    pmid = rec.get("PMID", "").strip()
-                    title = rec.get("TI", "").strip()
-                    abstract = rec.get("AB", "").strip()
-                    if pmid:
-                        entry = {"pmid": pmid, "title": title, "abstract": abstract}
-                        cache[pmid] = entry
-                        new_records.append(entry)
-                handle.close()
-            except Exception:
-                pass  # recall-safe: missing records are dropped
+                try:
+                    for rec in Medline.parse(handle):
+                        pmid = rec.get("PMID", "").strip()
+                        title = rec.get("TI", "").strip()
+                        abstract = rec.get("AB", "").strip()
+                        if pmid:
+                            entry = {"pmid": pmid, "title": title, "abstract": abstract}
+                            cache[pmid] = entry
+                            new_records.append(entry)
+                finally:
+                    handle.close()
+            except Exception as exc:
+                logger.warning("fetch_abstracts: chunk at offset %d failed: %s", start, exc)
             time.sleep(0.35)
 
         if new_records:

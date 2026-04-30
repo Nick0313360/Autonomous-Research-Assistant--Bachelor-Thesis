@@ -53,4 +53,4 @@ include = ["cascade_rc*", "config*", "infrastructure*", "models*", "orchestrator
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests", "cascade_rc/tests"]

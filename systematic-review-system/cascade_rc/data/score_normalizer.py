@@ -35,7 +35,6 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.isotonic import IsotonicRegression
 
-from tier2_screening.hybrid_retriever import HybridRetriever
 from infrastructure.encoder import SharedEncoderService
 from models.data_classes import CandidateRecord
 
@@ -88,7 +87,7 @@ class CalibratorBundle:
         return float(self.metadata.get(f"nll_{self._chosen}", float("nan")))
 
 
-def save_calibrator(bundle_dict: dict, path: Path) -> None:
+def save_calibrator(bundle_dict: dict[str, Any], path: Path) -> None:
     """Persist a calibrator bundle dict to *path* using joblib."""
     path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(bundle_dict, path)
@@ -176,6 +175,7 @@ def compute_raw_scores(
     -------
     pd.DataFrame with columns: pmid, bm25, specter2_cos, raw_score, y_abstract
     """
+    from tier2_screening.hybrid_retriever import HybridRetriever  # deferred — avoids circular import
     df = pd.read_parquet(topic_parquet)
 
     candidates: list[CandidateRecord] = [

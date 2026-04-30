@@ -70,7 +70,7 @@ class RankedCandidate:
     bm25_rank:        int            # 1 = best BM25 match
     dense_rank:       int            # 1 = best dense match
     rrf_score:        float          # higher = more relevant
-    calibrated_score: Optional[float] = None
+    calibrated_score: Optional[float] = None  # set by HybridRetriever when calibrator loaded
 
 
 # ---------------------------------------------------------------------------

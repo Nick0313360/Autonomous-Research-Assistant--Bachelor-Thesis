@@ -113,7 +113,7 @@ def fit_calibrators(
 
     # Clip isotonic predictions away from 0/1 to avoid infinite log-loss
     p_iso = np.clip(iso.predict(x_val), 1e-15, 1.0 - 1e-15)
-    p_platt = platt.predict_proba(x_val.reshape(-1, 1))[:, 1]
+    p_platt = np.clip(platt.predict_proba(x_val.reshape(-1, 1))[:, 1], 1e-15, 1.0 - 1e-15)
 
     nll_iso = float(log_loss(y_val, p_iso))
     nll_platt = float(log_loss(y_val, p_platt))
@@ -138,7 +138,7 @@ def fit_calibrators(
             "brier_platt": brier_platt,
             "n_train": int(len(x_train)),
             "n_val": int(len(x_val)),
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         },
     }
 

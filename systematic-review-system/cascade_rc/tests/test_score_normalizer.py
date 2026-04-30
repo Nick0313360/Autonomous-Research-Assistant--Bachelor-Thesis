@@ -19,7 +19,9 @@ if str(_REPO_ROOT) not in sys.path:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_calibrators(seed: int = 0):
+def _make_calibrators(
+    seed: int = 0,
+) -> tuple[IsotonicRegression, LogisticRegression, np.ndarray, np.ndarray]:
     """Return (iso, platt) fitted on synthetic RRF-range data."""
     rng = np.random.default_rng(seed)
     x = rng.uniform(0.016, 0.033, 200)
@@ -132,4 +134,6 @@ def test_calibrator_predict_empty_input() -> None:
         {"chosen": "isotonic", "isotonic": iso, "platt": platt, "metadata": {}}
     )
     result = bundle.predict(np.array([]))
-    assert len(result) == 0
+    assert isinstance(result, np.ndarray), f"Expected np.ndarray, got {type(result)}"
+    assert result.shape == (0,), f"Expected shape (0,), got {result.shape}"
+    assert result.dtype == np.float64, f"Expected float64, got {result.dtype}"

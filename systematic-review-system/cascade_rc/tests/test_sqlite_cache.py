@@ -5,8 +5,6 @@ import sqlite3
 import sys
 from pathlib import Path
 
-import pytest
-
 _REPO_ROOT = Path(__file__).parent.parent.parent.resolve()
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
@@ -94,6 +92,8 @@ def test_close_flushes_wal(tmp_path: Path) -> None:
         verdict=1,
         vote_label="Include",
     )
+    assert (tmp_path / "test.db-wal").exists() or (tmp_path / "test.db-shm").exists(), \
+        "Expected WAL sidecars before close() — WAL mode not activated?"
     cache.close()
     assert not (tmp_path / "test.db-wal").exists(), ".db-wal sidecar found after close()"
     assert not (tmp_path / "test.db-shm").exists(), ".db-shm sidecar found after close()"

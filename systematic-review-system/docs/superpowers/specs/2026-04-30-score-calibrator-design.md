@@ -133,9 +133,16 @@ Brier score of the chosen calibrator on the held-out 20 % must be strictly less 
 ## Invariants
 
 - `calibrated_score ∈ [0, 1]` — enforced by `np.clip` inside `CalibratorBundle.predict()`.
+- `CalibratorBundle.predict()` always returns shape `(n,)` float64 — the `predict_proba` slice `[:,1]` must be squeezed, never left as `(n,1)`.
+- Empty input (`s = np.array([])`) returns `np.array([])` without error — guard with an early return.
+- The `INFO` log ("Loaded … calibrator") fires exactly once, at `HybridRetriever` construction, not inside `filter()`.
 - Backwards compatible: `calibrator_path=None` leaves all existing behaviour unchanged.
 - `fit_platt()` / `apply_platt()` untouched — existing `tests/test_score_normalizer.py` passes without modification.
 - Private sklearn API avoided: Platt uses `LogisticRegression(C=1e10)` (same sigmoid, public API).
+
+### Additional test (empty-input guard)
+
+`test_calibrator_predict_empty_input` — `CalibratorBundle.predict(np.array([]))` returns an array with `len == 0` and does not raise.
 
 ---
 

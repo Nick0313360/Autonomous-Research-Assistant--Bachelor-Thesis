@@ -97,3 +97,66 @@ def test_close_flushes_wal(tmp_path: Path) -> None:
     cache.close()
     assert not (tmp_path / "test.db-wal").exists(), ".db-wal sidecar found after close()"
     assert not (tmp_path / "test.db-shm").exists(), ".db-shm sidecar found after close()"
+
+
+def test_concurrent_writes(tmp_path: Path) -> None:
+    """Two threads writing different keys: no exceptions, both rows present."""
+    import threading
+
+    cache = SQLiteEnsembleCache(tmp_path / "test.db")
+    errors: list[Exception] = []
+
+    def _write(seed_b: int) -> None:
+        try:
+            cache.put(
+                model_id="gpt-oss:120b",
+                prompt_sha="sha_concurrent",
+                pmid="77777777",
+                temperature=0.7,
+                seed_b=seed_b,
+                template_v="v1",
+                response={"satisfies": True},
+                verdict=1,
+                vote_label="Include",
+            )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    t1 = threading.Thread(target=_write, args=(0,))
+    t2 = threading.Thread(target=_write, args=(1,))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert not errors, f"Thread errors: {errors}"
+
+    conn = sqlite3.connect(str(tmp_path / "test.db"))
+    count = conn.execute(
+        "SELECT COUNT(*) FROM llm_calls WHERE pmid='77777777'"
+    ).fetchone()[0]
+    conn.close()
+    cache.close()
+    assert count == 2
+
+
+def test_stats_rows_per_seed_b(tmp_path: Path) -> None:
+    """stats() returns correct total_rows, unique_pmids, rows_per_seed_b."""
+    cache = SQLiteEnsembleCache(tmp_path / "test.db")
+    for seed_b in range(5):
+        cache.put(
+            model_id="gpt-oss:120b",
+            prompt_sha="sha_stats",
+            pmid="44444444",
+            temperature=0.7,
+            seed_b=seed_b,
+            template_v="v1",
+            response={},
+            verdict=1,
+            vote_label="Include",
+        )
+    s = cache.stats()
+    assert s["total_rows"] == 5
+    assert s["unique_pmids"] == 1
+    assert s["rows_per_seed_b"] == {"0": 1, "1": 1, "2": 1, "3": 1, "4": 1}
+    cache.close()

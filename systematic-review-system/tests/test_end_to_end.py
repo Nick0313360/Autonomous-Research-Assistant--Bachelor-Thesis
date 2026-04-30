@@ -73,7 +73,7 @@ def output_dir(tmp_path_factory) -> Path:
 
 def _run_async(coro):
     """Execute a coroutine synchronously (compatible with pytest-asyncio absent)."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------

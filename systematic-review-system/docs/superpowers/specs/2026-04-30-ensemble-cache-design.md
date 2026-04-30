@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     response    TEXT    NOT NULL,   -- raw JSON string from LLM
     verdict     INTEGER NOT NULL,   -- 0=Exclude, 1=Include, 2=Uncertain
     vote_label  TEXT    NOT NULL,   -- "Exclude" | "Include" | "Uncertain" (lossless round-trip)
-    created_at  TEXT    NOT NULL,
+    created_at  TEXT    NOT NULL,   -- ISO-8601 UTC: datetime.now(timezone.utc).isoformat()
     -- prompt_sha invalidates on any template edit; template_v enables human-readable
     -- ablation queries without juggling SHAs. Both columns serve different consumers.
     UNIQUE(model_id, prompt_sha, pmid, temperature, seed_b, template_v)

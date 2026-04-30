@@ -38,8 +38,8 @@ class SQLiteEnsembleCache:
     """
 
     def __init__(self, path: Path) -> None:
-        self._path = path
-        path.parent.mkdir(parents=True, exist_ok=True)
+        self._path = Path(path)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
         self._local: threading.local = threading.local()
         conn = self._connection()
         conn.executescript(self.SCHEMA)

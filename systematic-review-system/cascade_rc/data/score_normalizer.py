@@ -26,6 +26,7 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
+from sklearn.isotonic import IsotonicRegression
 
 from tier2_screening.hybrid_retriever import HybridRetriever
 from infrastructure.encoder import SharedEncoderService
@@ -46,11 +47,11 @@ _RRF_K = 60
 class CalibratorBundle:
     """Runtime wrapper around a joblib-persisted calibrator dict."""
 
-    def __init__(self, bundle: dict) -> None:
+    def __init__(self, bundle: dict[str, Any]) -> None:
         self._chosen: str = bundle["chosen"]
-        self._iso = bundle["isotonic"]
-        self._platt = bundle["platt"]
-        self.metadata: dict = bundle.get("metadata", {})
+        self._iso: IsotonicRegression = bundle["isotonic"]
+        self._platt: LogisticRegression = bundle["platt"]
+        self.metadata: dict[str, Any] = bundle.get("metadata", {})
 
     def predict(self, s: np.ndarray) -> np.ndarray:
         """Return calibrated probabilities for raw RRF scores *s*.
@@ -58,13 +59,17 @@ class CalibratorBundle:
         Always returns shape (n,) float64, values clipped to [0, 1].
         Returns np.array([], dtype=float64) for empty input without raising.
         """
-        s = np.asarray(s, dtype=np.float64)
+        s = np.atleast_1d(np.asarray(s, dtype=np.float64))
         if s.size == 0:
             return np.array([], dtype=np.float64)
         if self._chosen == "isotonic":
             out = self._iso.predict(s)
-        else:
+        elif self._chosen == "platt":
             out = self._platt.predict_proba(s.reshape(-1, 1))[:, 1]
+        else:
+            raise ValueError(
+                f"Unknown calibrator type {self._chosen!r}; expected 'isotonic' or 'platt'."
+            )
         return np.clip(out, 0.0, 1.0).astype(np.float64)
 
     @property

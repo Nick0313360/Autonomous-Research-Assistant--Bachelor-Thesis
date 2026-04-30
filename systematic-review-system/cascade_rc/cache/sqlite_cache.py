@@ -91,6 +91,35 @@ class SQLiteEnsembleCache:
         )
         conn.commit()
 
+    def get(
+        self,
+        *,
+        model_id: str,
+        prompt_sha: str,
+        pmid: str,
+        temperature: float,
+        seed_b: int,
+        template_v: str,
+    ) -> dict[str, Any] | None:
+        """Return stored row as dict (with response parsed to dict) or None on miss."""
+        row = self._connection().execute(
+            """
+            SELECT response, verdict, vote_label, created_at
+            FROM llm_calls
+            WHERE model_id=? AND prompt_sha=? AND pmid=?
+              AND temperature=? AND seed_b=? AND template_v=?
+            """,
+            (model_id, prompt_sha, pmid, temperature, seed_b, template_v),
+        ).fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        try:
+            d["response"] = json.loads(d["response"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return d
+
     def close(self) -> None:
         """Close thread-local connection; flushes WAL sidecars (.db-wal, .db-shm)."""
         if hasattr(self._local, "conn") and self._local.conn is not None:

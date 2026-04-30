@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from models.data_classes import (
@@ -73,16 +74,17 @@ class ScreeningOrchestrator:
 
     def __init__(
         self,
-        encoder:    Any,
-        llm_client: Any,
-        review_id:  str,
-        prisma:     Optional[PRISMAManager] = None,
+        encoder:         Any,
+        llm_client:      Any,
+        review_id:       str,
+        prisma:          Optional[PRISMAManager] = None,
+        calibrator_path: Optional[Path] = None,
     ) -> None:
         self._encoder          = encoder
         self._llm_client       = llm_client
         self._review_id        = review_id
         self._prisma           = prisma or PRISMAManager(review_id)
-        self._hybrid_retriever = HybridRetriever()
+        self._hybrid_retriever = HybridRetriever(calibrator_path=calibrator_path)
         self._abstract_screener = AbstractScreener()
         self._example_buffer   = ExampleBuffer(encoder)
         self._fulltext_retriever = FullTextRetriever(review_id)

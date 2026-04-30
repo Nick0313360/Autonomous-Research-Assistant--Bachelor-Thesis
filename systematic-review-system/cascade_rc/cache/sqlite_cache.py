@@ -120,6 +120,57 @@ class SQLiteEnsembleCache:
             pass
         return d
 
+    def fetch_ensemble(
+        self,
+        *,
+        model_id: str,
+        prompt_sha: str,
+        pmid: str,
+        temperature: float,
+        template_v: str,
+        B: int,
+    ) -> list[dict[str, Any]]:
+        """Return up to B cached rows for this (model, prompt, pmid, temp, template), ordered by seed_b."""
+        rows = self._connection().execute(
+            """
+            SELECT response, verdict, vote_label, seed_b, created_at
+            FROM llm_calls
+            WHERE model_id=? AND prompt_sha=? AND pmid=?
+              AND temperature=? AND template_v=?
+            ORDER BY seed_b
+            LIMIT ?
+            """,
+            (model_id, prompt_sha, pmid, temperature, template_v, B),
+        ).fetchall()
+        result = []
+        for row in rows:
+            d = dict(row)
+            try:
+                d["response"] = json.loads(d["response"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+            result.append(d)
+        return result
+
+    def stats(self) -> dict[str, Any]:
+        """Return cache statistics: total_rows, unique_pmids, rows_per_seed_b."""
+        conn = self._connection()
+        total_rows: int = conn.execute(
+            "SELECT COUNT(*) FROM llm_calls"
+        ).fetchone()[0]
+        unique_pmids: int = conn.execute(
+            "SELECT COUNT(DISTINCT pmid) FROM llm_calls"
+        ).fetchone()[0]
+        seed_rows = conn.execute(
+            "SELECT seed_b, COUNT(*) AS cnt FROM llm_calls GROUP BY seed_b ORDER BY seed_b"
+        ).fetchall()
+        rows_per_seed_b = {str(row["seed_b"]): row["cnt"] for row in seed_rows}
+        return {
+            "total_rows": total_rows,
+            "unique_pmids": unique_pmids,
+            "rows_per_seed_b": rows_per_seed_b,
+        }
+
     def close(self) -> None:
         """Close thread-local connection; flushes WAL sidecars (.db-wal, .db-shm)."""
         if hasattr(self._local, "conn") and self._local.conn is not None:

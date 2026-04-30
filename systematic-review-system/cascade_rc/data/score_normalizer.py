@@ -93,6 +93,56 @@ def load_calibrator(path: Path) -> CalibratorBundle:
     return CalibratorBundle(joblib.load(path))
 
 
+def fit_calibrators(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_val: np.ndarray,
+    y_val: np.ndarray,
+) -> dict[str, Any]:
+    """Fit iso + Platt on train fold; pick lower-NLL on val fold; return bundle dict."""
+    import datetime
+    from sklearn.metrics import brier_score_loss, log_loss
+
+    iso = IsotonicRegression(out_of_bounds="clip")
+    iso.fit(x_train, y_train)
+
+    platt = LogisticRegression(
+        C=1e10, solver="lbfgs", max_iter=1000, random_state=42
+    )
+    platt.fit(x_train.reshape(-1, 1), y_train)
+
+    # Clip isotonic predictions away from 0/1 to avoid infinite log-loss
+    p_iso = np.clip(iso.predict(x_val), 1e-15, 1.0 - 1e-15)
+    p_platt = platt.predict_proba(x_val.reshape(-1, 1))[:, 1]
+
+    nll_iso = float(log_loss(y_val, p_iso))
+    nll_platt = float(log_loss(y_val, p_platt))
+    brier_iso = float(brier_score_loss(y_val, p_iso))
+    brier_platt = float(brier_score_loss(y_val, p_platt))
+
+    chosen = "isotonic" if nll_iso <= nll_platt else "platt"
+    logger.info(
+        "fit_calibrators: chosen=%s  NLL iso=%.4f platt=%.4f  "
+        "Brier iso=%.4f platt=%.4f",
+        chosen, nll_iso, nll_platt, brier_iso, brier_platt,
+    )
+
+    return {
+        "chosen": chosen,
+        "isotonic": iso,
+        "platt": platt,
+        "metadata": {
+            "nll_isotonic": nll_iso,
+            "nll_platt": nll_platt,
+            "brier_isotonic": brier_iso,
+            "brier_platt": brier_platt,
+            "n_train": int(len(x_train)),
+            "n_val": int(len(x_val)),
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------

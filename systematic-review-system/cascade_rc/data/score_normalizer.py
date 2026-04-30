@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 import joblib
-import pickle
 from pathlib import Path
 from typing import Any, Optional
 
@@ -291,10 +290,8 @@ def main() -> None:
     import argparse
     import sys
 
-    from sklearn.metrics import roc_auc_score
     from sklearn.model_selection import StratifiedShuffleSplit
 
-    # Ensure repo root is on sys.path when invoked as a script
     _repo_root = Path(__file__).parent.parent.parent.resolve()
     if str(_repo_root) not in sys.path:
         sys.path.insert(0, str(_repo_root))
@@ -302,7 +299,7 @@ def main() -> None:
     from cascade_rc.data.clef_tar_loader import load_topic
 
     parser = argparse.ArgumentParser(
-        description="Fit Platt calibration on CLEF-TAR topic Tier-2 scores."
+        description="Fit calibration bundle on CLEF-TAR topic Tier-2 scores."
     )
     parser.add_argument(
         "--topic",
@@ -316,11 +313,19 @@ def main() -> None:
         default=None,
         help="Root data directory (default: <repo>/data).",
     )
+    parser.add_argument(
+        "--artefact-dir",
+        type=Path,
+        default=None,
+        help="Artefact output root (default: <repo>/artefacts/cascade_rc).",
+    )
     args = parser.parse_args()
 
     topic_id: str = args.topic
     data_dir: Path = args.data_dir or (_repo_root / "data")
+    artefact_dir: Path = args.artefact_dir or (_repo_root / "artefacts" / "cascade_rc")
     clef_dir: Path = data_dir / "clef_tar"
+    cal_dir: Path = artefact_dir / "calibrators"
 
     parquet_path = clef_dir / f"{topic_id}.parquet"
     if not parquet_path.exists():
@@ -330,7 +335,6 @@ def main() -> None:
             f"--topic {topic_id} --out {clef_dir}"
         )
 
-    # Build query from topic metadata; fall back gracefully if not available
     try:
         topic = load_topic(topic_id, data_dir)
         query = f"{topic.title} {topic.boolean_query}"
@@ -343,63 +347,37 @@ def main() -> None:
     logger.info("Computing raw scores for %s …", topic_id)
     scored_df = compute_raw_scores(parquet_path, query)
 
-    # Attach title + abstract from the original parquet (needed for output)
-    original_df = pd.read_parquet(parquet_path)
-    original_df["pmid"] = original_df["pmid"].astype(str)
-    scored_df = scored_df.merge(
-        original_df[["pmid", "title", "abstract"]].drop_duplicates("pmid"),
-        on="pmid",
-        how="left",
-    )
-
     raw_scores = scored_df["raw_score"].to_numpy()
     y = scored_df["y_abstract"].to_numpy().astype(int)
 
-    # Stratified 80/20 split (20% Platt-fit set, 80% evaluation set)
     sss = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-    train_idx, test_idx = next(sss.split(raw_scores, y))
+    train_idx, val_idx = next(sss.split(raw_scores, y))
 
-    x_train, y_train = raw_scores[train_idx], y[train_idx]
-    x_test, y_test = raw_scores[test_idx], y[test_idx]
-
-    logger.info("Fitting Platt calibrator on %d samples …", len(x_train))
-    calibrator = fit_platt(x_train, y_train)
-    s_test = apply_platt(calibrator, x_test)
-
-    # ---- Metrics -----------------------------------------------------------
-    auc_raw = roc_auc_score(y_test, x_test)
-    auc_s = roc_auc_score(y_test, s_test)
-    print(f"AUC (raw_score) : {auc_raw:.4f}")
-    print(f"AUC (s_score)   : {auc_s:.4f}")
-
-    # ---- Reliability plot --------------------------------------------------
-    reports_dir = _repo_root / "reports"
-    _reliability_plot(
-        s_test,
-        y_test,
-        n_bins=10,
-        out_path=reports_dir / f"{topic_id}_reliability.png",
-        topic_id=topic_id,
+    bundle_dict = fit_calibrators(
+        x_train=raw_scores[train_idx],
+        y_train=y[train_idx],
+        x_val=raw_scores[val_idx],
+        y_val=y[val_idx],
     )
 
-    # ---- Save outputs ------------------------------------------------------
-    test_df = scored_df.iloc[test_idx].copy()
-    test_df["s_score"] = s_test.astype(np.float32)
-    out_cols = ["pmid", "title", "abstract", "raw_score", "s_score", "y_abstract"]
+    cal_dir.mkdir(parents=True, exist_ok=True)
+    pkl_path = cal_dir / f"{topic_id}.pkl"
+    save_calibrator(bundle_dict, pkl_path)
 
-    clef_dir.mkdir(parents=True, exist_ok=True)
-    scored_parquet = clef_dir / f"{topic_id}_scored.parquet"
-    test_df[out_cols].to_parquet(scored_parquet, index=False)
-    logger.info("Saved scored parquet → %s", scored_parquet)
+    bundle = CalibratorBundle(bundle_dict)
+    s_val = bundle.predict(raw_scores[val_idx])
+    png_path = cal_dir / f"{topic_id}.png"
+    _reliability_plot(s_val, y[val_idx], n_bins=10, out_path=png_path, topic_id=topic_id)
 
-    platt_pkl = clef_dir / f"{topic_id}_platt.pkl"
-    with open(platt_pkl, "wb") as fh:
-        pickle.dump(calibrator, fh)
-    logger.info("Saved Platt calibrator → %s", platt_pkl)
-
-    print(f"Scored parquet   → {scored_parquet}")
-    print(f"Platt calibrator → {platt_pkl}")
-    print(f"Reliability plot → {reports_dir / f'{topic_id}_reliability.png'}")
+    meta = bundle_dict["metadata"]
+    print(f"Topic           : {topic_id}")
+    print(f"Chosen          : {bundle_dict['chosen']}")
+    print(f"NLL isotonic    : {meta['nll_isotonic']:.4f}")
+    print(f"NLL platt       : {meta['nll_platt']:.4f}")
+    print(f"Brier isotonic  : {meta['brier_isotonic']:.4f}")
+    print(f"Brier platt     : {meta['brier_platt']:.4f}")
+    print(f"Calibrator pkl  → {pkl_path}")
+    print(f"Reliability plot→ {png_path}")
 
 
 if __name__ == "__main__":

@@ -1,15 +1,23 @@
 """
 cascade_rc/data/score_normalizer.py
 =====================================
-Platt-scaled score normaliser for the Tier-2 hybrid ranker.
+Calibrated score normaliser for the Tier-2 hybrid ranker.
 
-Workflow
---------
-1. compute_raw_scores() — run the Tier-2 hybrid BM25+SPECTER2 ranker and
-   return per-document scores (bm25, specter2_cos, raw_score).
-2. fit_platt()          — fit a Platt calibration (logistic regression) on a
-   stratified hold-out split.
-3. apply_platt()        — project raw scores → calibrated P(Y=1|x) ∈ [0, 1].
+Public API
+----------
+fit_calibrators()  — fit IsotonicRegression + Platt on a train/val split; pick
+                     the lower-NLL calibrator; return a bundle dict.
+save_calibrator()  — persist a bundle dict to disk via joblib.
+load_calibrator()  — load a persisted bundle and return a CalibratorBundle.
+CalibratorBundle   — unified .predict(s) wrapper; routes to isotonic or Platt.
+
+Legacy API (kept for backwards compatibility)
+---------------------------------------------
+compute_raw_scores() — run the Tier-2 hybrid BM25+SPECTER2 ranker and return
+                       per-document scores (bm25, specter2_cos, raw_score).
+fit_platt()          — fit a Platt calibration (logistic regression) on a
+                       stratified hold-out split.
+apply_platt()        — project raw scores → calibrated P(Y=1|x) ∈ [0, 1].
 
 CLI
 ---
@@ -360,7 +368,6 @@ def main() -> None:
         y_val=y[val_idx],
     )
 
-    cal_dir.mkdir(parents=True, exist_ok=True)
     pkl_path = cal_dir / f"{topic_id}.pkl"
     save_calibrator(bundle_dict, pkl_path)
 

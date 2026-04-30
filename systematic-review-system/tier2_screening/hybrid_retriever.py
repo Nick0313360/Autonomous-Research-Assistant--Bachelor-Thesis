@@ -17,7 +17,8 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import faiss
 import numpy as np
@@ -65,10 +66,11 @@ def _tokens(text: str) -> List[str]:
 
 @dataclass
 class RankedCandidate:
-    candidate:   CandidateRecord
-    bm25_rank:   int      # 1 = best BM25 match
-    dense_rank:  int      # 1 = best dense match
-    rrf_score:   float    # higher = more relevant
+    candidate:        CandidateRecord
+    bm25_rank:        int            # 1 = best BM25 match
+    dense_rank:       int            # 1 = best dense match
+    rrf_score:        float          # higher = more relevant
+    calibrated_score: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
@@ -87,12 +89,30 @@ class HybridRetriever:
     above, below = retriever.filter(ranked)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, calibrator_path: Optional[Path] = None) -> None:
         self._faiss_index:   Optional[faiss.IndexFlatIP] = None
         self._bm25:          Optional[BM25Okapi] = None
         self._id_map:        Dict[int, str] = {}   # faiss position → record_id
         self._record_map:    Dict[str, CandidateRecord] = {}   # record_id → record
         self._embed_dim:     int = 128
+        self._calibrator:    Optional[Any] = None
+
+        if calibrator_path is not None:
+            try:
+                from cascade_rc.data.score_normalizer import load_calibrator
+                self._calibrator = load_calibrator(calibrator_path)
+                logger.info(
+                    "Loaded %s calibrator (NLL=%.4f) from %s",
+                    self._calibrator.chosen,
+                    self._calibrator.nll,
+                    calibrator_path,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Could not load calibrator from %s: %s — running uncalibrated",
+                    calibrator_path,
+                    exc,
+                )
 
     # ------------------------------------------------------------------
     # build_indices
@@ -232,16 +252,13 @@ class HybridRetriever:
         ranked:    List[RankedCandidate],
         threshold: float = 0.01,
     ) -> Tuple[List[RankedCandidate], List[RankedCandidate]]:
-        """
-        Split ranked candidates at *threshold*.
+        """Split ranked candidates at *threshold*; batch-apply calibrator if loaded."""
+        if self._calibrator is not None and ranked:
+            rrf_arr = np.array([rc.rrf_score for rc in ranked], dtype=np.float64)
+            calibrated = self._calibrator.predict(rrf_arr)
+            for rc, cal in zip(ranked, calibrated):
+                rc.calibrated_score = float(cal)
 
-        Default threshold of 0.01 is calibrated so that the top ~90 % of
-        papers (by RRF score) pass through when there are ≥ 100 candidates.
-
-        Returns
-        -------
-        (above_threshold, below_threshold)
-        """
         above = [r for r in ranked if r.rrf_score >= threshold]
         below = [r for r in ranked if r.rrf_score <  threshold]
         logger.info(

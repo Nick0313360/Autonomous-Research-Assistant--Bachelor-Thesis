@@ -16,7 +16,6 @@ routing them to the human-recovery branch (CASCADE-RC paper §4, eq. 2).
 """
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import logging
 from dataclasses import dataclass
@@ -86,6 +85,7 @@ def _majority_and_u(votes: list[Vote], n: int) -> tuple[Vote, float, int]:
 
     Returns (majority, u, y_hat).
     """
+    assert len(votes) == n, f"votes length {len(votes)} != n {n}"
     include_count = votes.count("Include")
     exclude_count = votes.count("Exclude")
 
@@ -208,7 +208,8 @@ async def screen_abstract_ensemble(
                     verdict=_vote_to_int(vote),
                     vote_label=vote,
                 )
-            logger.info("cache_miss pmid=%s slot=%d vote=%s", pmid, b, vote)
+            if use_cache:
+                logger.info("cache_miss pmid=%s slot=%d vote=%s", pmid, b, vote)
 
         votes.append(vote)
 

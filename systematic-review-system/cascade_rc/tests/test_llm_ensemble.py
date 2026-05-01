@@ -6,6 +6,7 @@ Tests for the refactored _majority_and_u (triple return) and edge-case voting lo
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -14,7 +15,10 @@ _REPO_ROOT = Path(__file__).parent.parent.parent.resolve()
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from cascade_rc.cache.sqlite_cache import SQLiteEnsembleCache
+from cascade_rc.cache.llm_ensemble import _CRITERION_TEXT
 from infrastructure.llm_client import LLMResponse
+from tier2_screening.abstract_screener import _TEMPLATE, _fill_template
 
 
 _PICO = {
@@ -126,15 +130,8 @@ def test_all_uncertain() -> None:
 # Cache integration tests
 # ---------------------------------------------------------------------------
 
-import hashlib
-
-from cascade_rc.cache.sqlite_cache import SQLiteEnsembleCache
-from tier2_screening.abstract_screener import _TEMPLATE, _fill_template
-from cascade_rc.cache.llm_ensemble import _CRITERION_TEXT
-
-
 def _make_prompt_sha(title: str, abstract: str, pico: dict) -> str:
-    """Replicate the sha computation from screen_abstract_ensemble."""
+    # mirrors screen_abstract_ensemble pico_text + _fill_template + sha256 block — update together
     pico_text = (
         f"Population: {pico.get('population', '')}\n"
         f"Intervention: {pico.get('intervention', '')}\n"
@@ -229,6 +226,8 @@ def test_partial_cache_completion(tmp_path: Path) -> None:
     assert len(result.votes) == 5
     # Cached slots at indices 0, 2, 4 are Include; LLM slots 1, 3 also Include here
     assert result.votes[0] == "Include"  # cached
+    assert result.votes[1] == "Include"  # LLM
     assert result.votes[2] == "Include"  # cached
+    assert result.votes[3] == "Include"  # LLM
     assert result.votes[4] == "Include"  # cached
     cache.close()

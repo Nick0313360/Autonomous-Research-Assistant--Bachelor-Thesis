@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import tempfile
 from pathlib import Path
 
@@ -10,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from cascade_rc.certificates.store import CertificationResult
+from cascade_rc.config import CascadeRCConfig
 from cascade_rc.evaluation.metrics import wss_at_recall
 
 M_GRID_CANDIDATES: list[int] = [26, 35, 50, 75, 100]
@@ -103,7 +103,7 @@ def _compute_wss(result: CertificationResult, df_full: pd.DataFrame) -> dict:
 def _run_topic(
     topic_id: str,
     parquet_path: Path,
-    config,
+    config: CascadeRCConfig,
     global_seed: int,
     out_dir: Path,
 ) -> tuple[list[dict], bool]:
@@ -114,9 +114,8 @@ def _run_topic(
         skipped=True if the topic was skipped due to m_plus_full < N_min.
     """
     # Compute N_min locally to avoid importing calibration module before skip check
-    alpha = config.ltt.alpha
-    delta_ltt = config.ltt.delta_LTT
-    n_min = math.ceil(math.log(1 / delta_ltt) / (-math.log(1 - alpha)))
+    from cascade_rc.calibration.main_calibrate import _compute_n_min
+    n_min = _compute_n_min(config.ltt.alpha, config.ltt.delta_LTT)
 
     df = pd.read_parquet(parquet_path)
     m_plus_full = int(((df["is_calib"] == 1) & (df["y_abstract"] == 1)).sum())
@@ -200,8 +199,6 @@ def run_sweep(
         return df_empty
 
     from joblib import Parallel, delayed
-
-    from cascade_rc.config import CascadeRCConfig
 
     config = CascadeRCConfig()
     parquet_paths = sorted(Path(data_dir).glob("*.parquet"))

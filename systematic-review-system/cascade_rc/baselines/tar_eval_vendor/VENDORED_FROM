@@ -4,5 +4,5 @@ Path:     scripts/tar_eval.py + scripts/measures/eval_measures.py + scripts/meas
           + scripts/seeker/topic_document_file_handler.py + scripts/seeker/trec_qrel_handler.py
           + scripts/seeker/trec_result_handler.py
 Commit:   dbc13d02bb3e2f8ebc90e62ff47f5eb591e5ca20
-License:  See LICENSE in source repo. Verify license terms before distributing.
+License:  BSD-3-Clause (see LICENSE in source repo)
 Vendored: 2026-05-01

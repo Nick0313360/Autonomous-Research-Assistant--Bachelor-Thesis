@@ -7,6 +7,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from cascade_rc.certificates.store import CertificationResult
+from cascade_rc.evaluation.metrics import wss_at_recall
+
 M_GRID_CANDIDATES: list[int] = [26, 35, 50, 75, 100]
 
 PARQUET_SCHEMA: dict[str, str] = {
@@ -73,6 +76,26 @@ def _subsample_to_m(
     permuted = rng.permutation(cal_pos_indices)
     drop_indices = permuted[m:]
     return df.drop(index=drop_indices).copy()
+
+
+def _compute_wss(result: CertificationResult, df_full: pd.DataFrame) -> dict:
+    """Compute WSS@95 on the test split (is_calib==0) under certified theta_hat.
+
+    Routing: documents with s < lambda_lo are auto-rejected (predictions=0).
+    Everything else reaches the working set (predictions=1), which includes
+    auto-accepted, SE-escalated, and uncertain-but-no-SE documents.
+    Auto-rejected positives are false negatives — wss_at_recall captures
+    this as status='recall_target_missed' when achieved recall < 0.95.
+    """
+    df_test = df_full[df_full["is_calib"] == 0]
+    s = df_test["s"].to_numpy(dtype=np.float64)
+    y = df_test["y_abstract"].to_numpy(dtype=np.int64)
+
+    lam_lo = float(result.theta_hat[0])
+    auto_reject = s < lam_lo
+    predictions = (~auto_reject).astype(int)
+
+    return wss_at_recall(predictions, y, target_recall=0.95)
 
 
 def run_sweep(

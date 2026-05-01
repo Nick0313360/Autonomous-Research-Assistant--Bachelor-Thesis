@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -98,6 +100,86 @@ def _compute_wss(result: CertificationResult, df_full: pd.DataFrame) -> dict:
     return wss_at_recall(predictions, y, target_recall=0.95)
 
 
+def _run_topic(
+    topic_id: str,
+    parquet_path: Path,
+    config,
+    global_seed: int,
+    out_dir: Path,
+) -> tuple[list[dict], bool]:
+    """Run m-sensitivity sweep for one topic.
+
+    Returns:
+        (rows, skipped): rows is a list of result-row dicts (one per m-cell);
+        skipped=True if the topic was skipped due to m_plus_full < N_min.
+    """
+    # Compute N_min locally to avoid importing calibration module before skip check
+    alpha = config.ltt.alpha
+    delta_ltt = config.ltt.delta_LTT
+    n_min = math.ceil(math.log(1 / delta_ltt) / (-math.log(1 - alpha)))
+
+    df = pd.read_parquet(parquet_path)
+    m_plus_full = int(((df["is_calib"] == 1) & (df["y_abstract"] == 1)).sum())
+
+    if m_plus_full < n_min:
+        return [], True
+
+    # Only import calibrate if we're not skipping
+    from cascade_rc.calibration.main_calibrate import calibrate
+
+    m_grid = _compute_m_grid(m_plus_full, n_min)
+    rows: list[dict] = []
+    cache_dir = out_dir / "calibration_cache"
+
+    for m in m_grid:
+        artefact_dir = cache_dir / f"{topic_id}_m{m}"
+        artefact_dir.mkdir(parents=True, exist_ok=True)
+
+        tmp_parquet: Path | None = None
+        if m == m_plus_full:
+            calib_path = parquet_path
+        else:
+            df_sub = _subsample_to_m(df, m, topic_id, global_seed)
+            with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as f:
+                tmp_parquet = Path(f.name)
+            df_sub.to_parquet(tmp_parquet, index=False)
+            calib_path = tmp_parquet
+
+        try:
+            result = calibrate(
+                topic_id, calib_path, config, artefact_dir=artefact_dir
+            )
+        finally:
+            if tmp_parquet is not None and tmp_parquet.exists():
+                tmp_parquet.unlink(missing_ok=True)
+
+        if isinstance(result, tuple):
+            rows.append({
+                "topic_id": topic_id,
+                "m_target": m,
+                "m_actual": m,
+                "abstention": True,
+                "wss_95": float("nan"),
+                "wss_status": "abstained",
+                "achieved_recall": float("nan"),
+                "mean_eta_lcb": float("nan"),
+            })
+        else:
+            wss_dict = _compute_wss(result, df)
+            rows.append({
+                "topic_id": topic_id,
+                "m_target": m,
+                "m_actual": m,
+                "abstention": False,
+                "wss_95": wss_dict["wss"],
+                "wss_status": wss_dict["status"],
+                "achieved_recall": wss_dict["achieved_recall"],
+                "mean_eta_lcb": float(np.mean(result.eta_lcb_grid)),
+            })
+
+    return rows, False
+
+
 def run_sweep(
     data_dir: Path,
     out_dir: Path,
@@ -117,4 +199,34 @@ def run_sweep(
         (out_dir / "skipped_topics.json").write_text(json.dumps([]))
         return df_empty
 
-    raise NotImplementedError("Non-dry-run sweep not yet implemented")
+    from joblib import Parallel, delayed
+
+    from cascade_rc.config import CascadeRCConfig
+
+    config = CascadeRCConfig()
+    parquet_paths = sorted(Path(data_dir).glob("*.parquet"))
+    if topics_filter:
+        parquet_paths = [p for p in parquet_paths if p.stem in topics_filter]
+
+    results: list[tuple[list[dict], bool]] = Parallel(
+        n_jobs=n_jobs, backend="loky"
+    )(
+        delayed(_run_topic)(p.stem, p, config, seed, out_dir)
+        for p in parquet_paths
+    )
+
+    all_rows: list[dict] = []
+    skipped_topics: list[str] = []
+    for (rows, skipped), p in zip(results, parquet_paths):
+        all_rows.extend(rows)
+        if skipped:
+            skipped_topics.append(p.stem)
+
+    if all_rows:
+        df = pd.DataFrame(all_rows).astype(PARQUET_SCHEMA)
+    else:
+        df = _empty_dataframe()
+
+    df.to_parquet(out_dir / "m_sensitivity.parquet", index=False)
+    (out_dir / "skipped_topics.json").write_text(json.dumps(sorted(skipped_topics)))
+    return df

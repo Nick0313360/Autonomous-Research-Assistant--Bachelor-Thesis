@@ -35,6 +35,7 @@ def run_sweep(
     dry_run: bool = False,
 ) -> pd.DataFrame:
     """Run m-sensitivity sweep over all topics in data_dir."""
+    data_dir = Path(data_dir)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

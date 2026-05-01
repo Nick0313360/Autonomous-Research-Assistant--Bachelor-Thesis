@@ -91,3 +91,43 @@ def llm_query_volume(routing: pd.DataFrame) -> dict:
         "total": total,
         "llm_fraction": llm_escalate / total if total > 0 else 0.0,
     }
+
+
+def bootstrap_eta_upper(
+    slack_mat: np.ndarray,
+    delta: float,
+    B: int = 1000,
+    seed: int = 0,
+) -> np.ndarray:
+    """Bootstrap (1−delta) upper confidence bound on mean slack per grid point.
+
+    Args:
+        slack_mat: (G, m_plus) float64 from CertificationResult.slack_mat.
+        delta:     Confidence level — use config.ltt.delta_bootstrap.
+        B:         Number of bootstrap resamples (default 1000).
+        seed:      RNG seed for reproducibility.
+
+    Returns:
+        (G,) array: for each grid point, the (1−delta)-quantile of B bootstrap means.
+    """
+    G, m_plus = slack_mat.shape
+    rng = np.random.default_rng(seed)
+    boot_means = np.empty((G, B), dtype=np.float64)
+    for b in range(B):
+        idx = rng.integers(0, m_plus, size=(G, m_plus))         # (G, m_plus)
+        boot_means[:, b] = slack_mat[np.arange(G)[:, None], idx].mean(axis=1)
+    return np.quantile(boot_means, 1.0 - delta, axis=1)         # (G,)
+
+
+def slack_ratio_diagnostic(
+    eta_lcb: np.ndarray,
+    eta_boot_upper: np.ndarray,
+) -> np.ndarray:
+    """Element-wise tightness ratio η̂⁻⋆ / η̂⁺_boot (paper §9.4).
+
+    Values ≈ 1: WSR LCB is tight relative to bootstrap estimate.
+    Values << 1: bound is conservative.
+    Returns nan where eta_boot_upper == 0.
+    """
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(eta_boot_upper > 0.0, eta_lcb / eta_boot_upper, np.nan)

@@ -7,7 +7,9 @@ import pytest
 
 from cascade_rc.evaluation.metrics import (
     abstention_rate,
+    bootstrap_eta_upper,
     llm_query_volume,
+    slack_ratio_diagnostic,
     wss_at_recall,
 )
 
@@ -100,3 +102,55 @@ def test_llm_query_volume_unknown_decision_raises() -> None:
     routing = pd.DataFrame({"pmid": ["1"], "decision": ["tier_4_special"]})
     with pytest.raises(ValueError, match="Unexpected decision values"):
         llm_query_volume(routing)
+
+
+# ---------------------------------------------------------------------------
+# bootstrap_eta_upper
+# ---------------------------------------------------------------------------
+
+def test_bootstrap_eta_upper_shape() -> None:
+    """Returns (G,) array for (G, m_plus) input."""
+    rng = np.random.default_rng(0)
+    G, m_plus = 5, 80
+    slack_mat = rng.uniform(0.0, 0.3, size=(G, m_plus))
+    upper = bootstrap_eta_upper(slack_mat, delta=0.05, B=500, seed=1)
+    assert upper.shape == (G,)
+
+
+def test_bootstrap_eta_upper_covers_sample_mean() -> None:
+    """Bootstrap (1-delta) upper bound >= sample mean for all G rows (should hold always)."""
+    rng = np.random.default_rng(42)
+    G, m_plus = 4, 200
+    slack_mat = rng.uniform(0.0, 0.3, size=(G, m_plus))
+    upper = bootstrap_eta_upper(slack_mat, delta=0.05, B=2000, seed=0)
+    sample_means = slack_mat.mean(axis=1)
+    assert np.all(upper >= sample_means - 1e-9)
+
+
+def test_bootstrap_eta_upper_deterministic() -> None:
+    """Same seed yields identical result across two calls."""
+    rng = np.random.default_rng(7)
+    slack_mat = rng.uniform(0.0, 0.5, size=(3, 50))
+    u1 = bootstrap_eta_upper(slack_mat, delta=0.10, B=200, seed=99)
+    u2 = bootstrap_eta_upper(slack_mat, delta=0.10, B=200, seed=99)
+    np.testing.assert_array_equal(u1, u2)
+
+
+# ---------------------------------------------------------------------------
+# slack_ratio_diagnostic
+# ---------------------------------------------------------------------------
+
+def test_slack_ratio_diagnostic_values() -> None:
+    eta_lcb  = np.array([0.5, 0.8, 0.0])
+    eta_boot = np.array([1.0, 1.0, 0.5])
+    ratio = slack_ratio_diagnostic(eta_lcb, eta_boot)
+    np.testing.assert_allclose(ratio, [0.5, 0.8, 0.0])
+
+
+def test_slack_ratio_diagnostic_zero_denominator_gives_nan() -> None:
+    """eta_boot_upper == 0 → nan (not a division error)."""
+    eta_lcb  = np.array([0.5, 0.3])
+    eta_boot = np.array([0.0, 1.0])
+    ratio = slack_ratio_diagnostic(eta_lcb, eta_boot)
+    assert np.isnan(ratio[0])
+    assert ratio[1] == pytest.approx(0.3)

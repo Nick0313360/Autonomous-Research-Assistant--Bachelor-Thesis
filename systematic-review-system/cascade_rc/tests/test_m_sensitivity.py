@@ -161,3 +161,27 @@ def test_wss_routed_correctly() -> None:
     assert abs(wss_dict["achieved_recall"] - 0.5) < 1e-9, (
         f"Expected achieved_recall=0.5, got {wss_dict['achieved_recall']}"
     )
+
+
+def test_skip_low_prevalence_topic(tmp_path: Path) -> None:
+    """Topic with m_plus_full < N_min produces zero rows and appears in skipped_topics.json.
+
+    N_min = ceil(ln(1/0.07) / (-ln(0.9))) = 26 with default LTTBudget.
+    We create a topic with only 5 calibration positives. The sweep must skip
+    it entirely — no calibrate() call — and record it in skipped_topics.json.
+    """
+    from cascade_rc.ablations.m_sensitivity import run_sweep
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    _make_synthetic_parquet(
+        data_dir, n=1_000, seed=7, n_calib_pos=5, filename="LOW_PREV.parquet"
+    )
+
+    out_dir = tmp_path / "out"
+    df = run_sweep(data_dir=data_dir, out_dir=out_dir, seed=42)
+
+    assert len(df) == 0, f"Expected 0 rows for skipped topic, got {len(df)}"
+
+    skipped = json.loads((out_dir / "skipped_topics.json").read_text())
+    assert "LOW_PREV" in skipped, f"LOW_PREV not in skipped_topics.json: {skipped}"

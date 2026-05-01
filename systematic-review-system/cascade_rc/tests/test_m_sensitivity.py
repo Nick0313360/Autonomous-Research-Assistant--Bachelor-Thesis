@@ -114,3 +114,50 @@ def test_subsample_passthrough_when_m_gte_available(tmp_path: Path) -> None:
     cal_pos_out = int(((df_out["is_calib"] == 1) & (df_out["y_abstract"] == 1)).sum())
     assert cal_pos_out == 10, f"Expected 10 cal positives unchanged, got {cal_pos_out}"
     assert len(df_out) == len(df), "Row count must be unchanged"
+
+
+def test_wss_routed_correctly() -> None:
+    """_compute_wss applies auto_reject = (s < lambda_lo) to test split only.
+
+    Setup: 3 test docs with y=[1,1,0] and s=[0.3, 0.6, 0.1].
+    theta_hat = (lambda_lo=0.5, lambda_hi=1.0, tau_se=0.5).
+    auto_reject = s < 0.5 → [True, False, True].
+    predictions = [0, 1, 0].
+    Positives captured: index 1 only (s=0.6) → recall = 1/2 = 0.5 < 0.95.
+    Expected: status='recall_target_missed', achieved_recall=0.5.
+    """
+    from cascade_rc.ablations.m_sensitivity import _compute_wss
+    from cascade_rc.certificates.store import CertificationResult
+
+    df = pd.DataFrame({
+        "is_calib": [0, 0, 0, 1, 1],
+        "y_abstract": [1, 1, 0, 1, 0],
+        "s":          [0.3, 0.6, 0.1, 0.9, 0.2],
+        "u":          [0.5, 0.5, 0.5, 0.5, 0.5],
+        "llm_y_hat":  [1, 1, 0, 1, 0],
+    })
+
+    result = CertificationResult(
+        topic="T",
+        status="certified",
+        abstain_reason=None,
+        m_plus=1,
+        theta_hat=np.array([0.5, 1.0, 0.5]),
+        lambda_hat_mask=np.ones(1, dtype=bool),
+        theta_grid=np.array([[0.5, 1.0, 0.5]]),
+        eta_lcb_grid=np.array([0.1]),
+        r_hat_grid=np.array([0.1]),
+        p_hb_grid=np.array([0.01]),
+        alpha_dagger_grid=np.array([0.2]),
+        slack_mat=np.zeros((1, 1)),
+        config_snapshot={},
+        timestamp="2026-05-01T00:00:00+00:00",
+    )
+
+    wss_dict = _compute_wss(result, df)
+    assert wss_dict["status"] == "recall_target_missed", (
+        f"Expected 'recall_target_missed', got '{wss_dict['status']}'"
+    )
+    assert abs(wss_dict["achieved_recall"] - 0.5) < 1e-9, (
+        f"Expected achieved_recall=0.5, got {wss_dict['achieved_recall']}"
+    )

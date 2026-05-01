@@ -193,7 +193,7 @@ Steps:
 Two test cases required:
 
 1. **Monotonicity:** For fixed predictions achieving recall >= 0.99, `wss_at_recall(p, y, 0.70)["wss"] < wss_at_recall(p, y, 0.95)["wss"]`.
-2. **Hand-computed example:** 10-document corpus, 3 positives. Screen 5, skip 5; 3 positives are all in screened set → recall=1.0, TN=4, FN=0. `WSS@0.95 = (4+0)/10 − (1−0.95) = 0.40 − 0.05 = 0.35`.
+2. **Hand-computed example:** 10-document corpus, 3 positives (7 negatives). Screen 5, skip 5; 3 positives are all in screened set → recall=1.0, TP=3, FP=2, TN=5, FN=0. `WSS@0.95 = (5+0)/10 − (1−0.95) = 0.50 − 0.05 = 0.45`.
 
 ---
 

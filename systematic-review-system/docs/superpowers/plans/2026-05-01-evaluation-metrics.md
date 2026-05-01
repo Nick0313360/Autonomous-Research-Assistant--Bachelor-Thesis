@@ -169,15 +169,15 @@ from cascade_rc.evaluation.metrics import wss_at_recall
 def test_wss_at_recall_hand_computed() -> None:
     """10-doc corpus, 3 positives, 5 screened (all positives in screened set).
 
-    TN=4, FN=0, N=10, recall=1.0.
-    WSS@0.95 = (4+0)/10 - (1-0.95) = 0.40 - 0.05 = 0.35
+    TP=3, FP=2, TN=5, FN=0, N=10, recall=1.0.
+    WSS@0.95 = (5+0)/10 - (1-0.95) = 0.50 - 0.05 = 0.45
     """
     y_true      = np.array([1, 1, 1, 0, 0, 0, 0, 0, 0, 0])
     predictions = np.array([1, 1, 1, 1, 1, 0, 0, 0, 0, 0])
     result = wss_at_recall(predictions, y_true, target_recall=0.95)
     assert result["status"] == "ok"
     assert result["achieved_recall"] == pytest.approx(1.0)
-    assert result["wss"] == pytest.approx(0.35, abs=1e-9)
+    assert result["wss"] == pytest.approx(0.45, abs=1e-9)
 
 
 def test_wss_at_recall_monotone_in_target() -> None:

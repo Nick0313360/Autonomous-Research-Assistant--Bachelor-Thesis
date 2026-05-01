@@ -122,29 +122,32 @@ async def screen_abstract_ensemble(
     title: str,
     abstract: str,
     pico: dict,
+    pmid: str | None = None,
     n_calls: int = 5,
     temperature: float = 0.7,
     _client: Optional[Any] = None,
+    _cache: Optional[Any] = None,
+    _model_id: str = "gpt-oss:120b",
+    _template_v: str = "v1",
 ) -> EnsembleResult:
     """
     Run B=n_calls stochastic screenings of one abstract and aggregate the votes.
 
+    When pmid and _cache are both provided, each slot is looked up in the SQLite
+    cache before calling the LLM. The sequential per-slot loop (replacing the former
+    asyncio.gather) enables crash-resumable runs: a killed process costs zero extra
+    LLM calls on restart for completed slots.
+
     Parameters
     ----------
-    title, abstract : str
-        Paper metadata.
-    pico : dict
-        Keys: population, intervention, comparator, outcome, study_design.
-    n_calls : int
-        Ensemble size B (default 5).
-    temperature : float
-        LLM sampling temperature; must be > 0 for stochastic diversity.
-    _client :
-        Injected LLMClient (used in tests to avoid live API calls).
-
-    Returns
-    -------
-    EnsembleResult with votes, majority, u ∈ [0, 1], y_hat ∈ {0, 1}.
+    pmid : str | None
+        PMID for cache keying. None disables caching (backwards-compatible).
+    _cache : SQLiteEnsembleCache | None
+        Injected cache instance. None disables caching.
+    _model_id : str
+        Model identifier stored in cache rows (default gpt-oss:120b).
+    _template_v : str
+        Template version tag for ablation filtering (default v1).
     """
     client = _client if _client is not None else LLMClient()
 
@@ -163,27 +166,52 @@ async def screen_abstract_ensemble(
         title=title,
         abstract=str(abstract)[:500],
     )
+    prompt_sha = hashlib.sha256(prompt.encode()).hexdigest()
 
-    # Fire all B calls in parallel; BFH endpoint supports concurrent requests
-    responses = await asyncio.gather(
-        *[
-            client.complete(
+    use_cache = _cache is not None and pmid is not None
+    votes: list[Vote] = []
+
+    for b in range(n_calls):
+        cached = None
+        if use_cache:
+            cached = _cache.get(
+                model_id=_model_id,
+                prompt_sha=prompt_sha,
+                pmid=pmid,
+                temperature=temperature,
+                seed_b=b,
+                template_v=_template_v,
+            )
+
+        if cached is not None:
+            vote: Vote = cached["vote_label"]  # type: ignore[assignment]
+            logger.info("cache_hit pmid=%s slot=%d", pmid, b)
+        else:
+            response = await client.complete(
                 prompt=prompt,
                 system=_SYSTEM,
-                model=client.GPT_MODEL,
+                model=_model_id,
                 temperature=temperature,
                 max_tokens=128,
                 response_format="json",
             )
-            for _ in range(n_calls)
-        ]
-    )
+            vote = _parse_vote(response.parsed_json)
+            if use_cache:
+                _cache.put(
+                    model_id=_model_id,
+                    prompt_sha=prompt_sha,
+                    pmid=pmid,
+                    temperature=temperature,
+                    seed_b=b,
+                    template_v=_template_v,
+                    response=response.parsed_json or {},
+                    verdict=_vote_to_int(vote),
+                    vote_label=vote,
+                )
+            logger.info("cache_miss pmid=%s slot=%d vote=%s", pmid, b, vote)
 
-    votes: list[Vote] = [_parse_vote(r.parsed_json) for r in responses]
+        votes.append(vote)
+
     majority, u, y_hat = _majority_and_u(votes, n_calls)
-
-    logger.debug(
-        "Ensemble: votes=%s majority=%s u=%.3f",
-        votes, majority, u,
-    )
+    logger.debug("Ensemble: votes=%s majority=%s u=%.3f", votes, majority, u)
     return EnsembleResult(votes=votes, majority=majority, u=u, y_hat=y_hat)

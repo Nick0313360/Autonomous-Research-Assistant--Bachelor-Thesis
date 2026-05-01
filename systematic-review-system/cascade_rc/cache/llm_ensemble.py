@@ -87,7 +87,8 @@ def _majority_and_u(votes: list[Vote], n: int) -> tuple[Vote, float, int]:
 
     Returns (majority, u, y_hat).
     """
-    assert len(votes) == n, f"votes length {len(votes)} != n {n}"
+    if len(votes) != n:
+        raise ValueError(f"votes length {len(votes)} != n {n}")
     include_count = votes.count("Include")
     exclude_count = votes.count("Exclude")
 

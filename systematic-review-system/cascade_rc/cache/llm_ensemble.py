@@ -16,8 +16,10 @@ routing them to the human-recovery branch (CASCADE-RC paper §4, eq. 2).
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
+import sqlite3
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
@@ -216,3 +218,177 @@ async def screen_abstract_ensemble(
     majority, u, y_hat = _majority_and_u(votes, n_calls)
     logger.debug("Ensemble: votes=%s majority=%s u=%.3f", votes, majority, u)
     return EnsembleResult(votes=votes, majority=majority, u=u, y_hat=y_hat)
+
+
+# ---------------------------------------------------------------------------
+# Offline driver — populate cache for an entire CLEF-TAR topic
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":  # pragma: no cover
+    import argparse
+    import json
+    import sys
+    from pathlib import Path as _Path
+
+    try:
+        from tqdm import tqdm as _tqdm
+    except ImportError:
+        def _tqdm(it, **_):  # type: ignore[misc]
+            return it
+
+    import logging as _logging
+    _logging.basicConfig(level=_logging.INFO, format="%(levelname)s %(name)s %(message)s")
+    _driver_log = _logging.getLogger("cascade_rc.cache.llm_ensemble.__main__")
+
+    from cascade_rc.cache.sqlite_cache import SQLiteEnsembleCache as _Cache
+    from cascade_rc.config import CascadeRCConfig as _Cfg
+    from cascade_rc.data.clef_tar_loader import (
+        _DEFAULT_CACHE_DIR as _TAR_DIR,
+        download_clef_tar_2019 as _download,
+        load_topic as _load_topic,
+    )
+    from cascade_rc.data.pubmed_fetch import fetch_abstracts as _fetch
+
+    _ap = argparse.ArgumentParser(
+        description="Populate LLM ensemble cache for a CLEF-TAR topic."
+    )
+    _ap.add_argument("--topic", required=True, help="CLEF-TAR topic ID, e.g. CD012768")
+    _ap.add_argument("--B", type=int, default=5, help="Ensemble size (default 5)")
+    _ap.add_argument("--T", type=float, default=0.7, help="LLM temperature (default 0.7)")
+    _ap.add_argument("--cache-path", type=_Path, default=None, help="Path to SQLite cache DB")
+    _ap.add_argument("--template-v", default="v1", help="Template version tag")
+    _ap.add_argument("--ncbi-email", default="", help="Email for NCBI API (required by NCBI ToS)")
+    _ap.add_argument("--max-failures", type=int, default=10,
+                     help="Abort after N consecutive PMID failures (default 10)")
+    _ap.add_argument("--resume-from-pmid", default=None,
+                     help="Skip PMIDs before this one in the candidate list")
+    _ap.add_argument("--dry-run", action="store_true",
+                     help="Report cache hit rate without making LLM calls, then exit")
+    _args = _ap.parse_args()
+
+    _cfg = _Cfg()
+    _cache_path: _Path = _args.cache_path or _cfg.sqlite_cache_path
+    _ncbi_email: str = _args.ncbi_email or _cfg.ncbi_email
+    if not _ncbi_email:
+        _driver_log.warning("No NCBI email provided; NCBI may throttle requests.")
+
+    # Download CLEF-TAR data if not cached
+    if not (_TAR_DIR / "2019-TAR").exists():
+        _driver_log.info("Downloading CLEF-TAR data to %s …", _TAR_DIR)
+        _download(_TAR_DIR)
+
+    _topic = _load_topic(_args.topic, _TAR_DIR)
+    _pmids: list[str] = _topic.candidate_pmids
+
+    # Apply --resume-from-pmid
+    if _args.resume_from_pmid is not None:
+        try:
+            _resume_idx = _pmids.index(_args.resume_from_pmid)
+            _pmids = _pmids[_resume_idx:]
+            _driver_log.info(
+                "Resuming from PMID %s (skipping first %d)", _args.resume_from_pmid, _resume_idx
+            )
+        except ValueError:
+            _driver_log.error(
+                "--resume-from-pmid %s not found in topic candidate list", _args.resume_from_pmid
+            )
+            sys.exit(1)
+
+    # Fetch abstracts via PubMed (per-PMID JSON cache in artefacts/)
+    _driver_log.info("Fetching abstracts for %d PMIDs …", len(_pmids))
+    _abstracts: dict = asyncio.run(
+        _fetch(_pmids, email=_ncbi_email, api_key=_cfg.ncbi_api_key)
+    )
+
+    _valid_pmids = [
+        p for p in _pmids
+        if p in _abstracts and _abstracts[p].get("abstract")
+    ]
+    _skipped = len(_pmids) - len(_valid_pmids)
+    if _skipped:
+        _driver_log.warning("Skipping %d PMIDs with no abstract", _skipped)
+
+    _cache = _Cache(_cache_path)
+    _pico: dict = {
+        "population": "", "intervention": "", "comparator": "", "outcome": "", "study_design": ""
+    }
+
+    # --dry-run: report cache completeness per PMID, exit without LLM calls
+    if _args.dry_run:
+        _hits = 0
+        for _p in _valid_pmids:
+            _rec = _abstracts[_p]
+            _pico_text = (
+                f"Population: \nIntervention: \nComparator: \n"
+                f"Outcome: \nStudy design: "
+            )
+            _prompt = _fill_template(
+                _TEMPLATE,
+                pico_text=_pico_text,
+                criterion_text=_CRITERION_TEXT,
+                title=str(_rec.get("title", "")),
+                abstract=str(_rec.get("abstract", ""))[:500],
+            )
+            _sha = hashlib.sha256(_prompt.encode()).hexdigest()
+            _rows = _cache.fetch_ensemble(
+                model_id=LLMClient.GPT_MODEL,
+                prompt_sha=_sha,
+                pmid=_p,
+                temperature=_args.T,
+                template_v=_args.template_v,
+                B=_args.B,
+            )
+            if len(_rows) == _args.B:
+                _hits += 1
+        print(json.dumps({
+            "topic": _args.topic,
+            "total_valid_pmids": len(_valid_pmids),
+            "fully_cached": _hits,
+            "cache_hit_rate": _hits / len(_valid_pmids) if _valid_pmids else 0.0,
+            "would_call_llm": (len(_valid_pmids) - _hits) * _args.B,
+        }, indent=2))
+        _cache.close()
+        sys.exit(0)
+
+    # Main loop
+    _client = LLMClient()
+    _failure_count = 0
+
+    for _pmid in _tqdm(_valid_pmids, desc=f"Ensemble {_args.topic}"):
+        _rec = _abstracts[_pmid]
+        try:
+            asyncio.run(
+                screen_abstract_ensemble(
+                    title=str(_rec.get("title", "")),
+                    abstract=str(_rec.get("abstract", "")),
+                    pico=_pico,
+                    pmid=_pmid,
+                    n_calls=_args.B,
+                    temperature=_args.T,
+                    _client=_client,
+                    _cache=_cache,
+                    _model_id=LLMClient.GPT_MODEL,
+                    _template_v=_args.template_v,
+                )
+            )
+            _failure_count = 0
+        except sqlite3.Error as exc:
+            _driver_log.error("PMID %s: structural cache error — aborting: %s", _pmid, exc)
+            _cache.close()
+            sys.exit(2)
+        except Exception as exc:  # noqa: BLE001
+            _failure_count += 1
+            _driver_log.warning(
+                "PMID %s: transient failure %d/%d: %s",
+                _pmid, _failure_count, _args.max_failures, exc,
+            )
+            if _failure_count >= _args.max_failures:
+                _driver_log.error(
+                    "Aborting: %d consecutive failures exceeded --max-failures=%d",
+                    _failure_count, _args.max_failures,
+                )
+                _cache.close()
+                sys.exit(1)
+
+    print(json.dumps(_cache.stats(), indent=2))
+    _cache.close()

@@ -97,3 +97,20 @@ def test_nested_subsamples(tmp_path: Path) -> None:
         "m=26 kept indices must be a strict subset of m=50 kept indices. "
         "Nested-seed guarantee requires m to be excluded from the hash."
     )
+
+
+def test_subsample_passthrough_when_m_gte_available(tmp_path: Path) -> None:
+    """_subsample_to_m returns an unchanged copy when m >= available cal positives."""
+    from cascade_rc.ablations.m_sensitivity import _subsample_to_m
+
+    parquet_path = _make_synthetic_parquet(tmp_path, n=500, seed=2, n_calib_pos=10)
+    df = pd.read_parquet(parquet_path)
+
+    m_plus = int(((df["is_calib"] == 1) & (df["y_abstract"] == 1)).sum())
+    assert m_plus == 10
+
+    # Requesting more than available — should return full copy unchanged
+    df_out = _subsample_to_m(df, m=50, topic_id="T", global_seed=0)
+    cal_pos_out = int(((df_out["is_calib"] == 1) & (df_out["y_abstract"] == 1)).sum())
+    assert cal_pos_out == 10, f"Expected 10 cal positives unchanged, got {cal_pos_out}"
+    assert len(df_out) == len(df), "Row count must be unchanged"

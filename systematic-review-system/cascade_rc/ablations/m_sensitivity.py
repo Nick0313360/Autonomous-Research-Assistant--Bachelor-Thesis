@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -20,6 +21,16 @@ PARQUET_SCHEMA: dict[str, str] = {
 }
 
 
+def _topic_seed(topic_id: str, global_seed: int) -> int:
+    """Derive a deterministic seed from (topic_id, global_seed).
+
+    Uses hashlib.sha256 instead of hash() so output is stable across
+    processes regardless of PYTHONHASHSEED — required for joblib loky workers.
+    """
+    digest = hashlib.sha256(f"{topic_id}:{global_seed}".encode()).digest()
+    return int.from_bytes(digest[:8], "little")
+
+
 def _empty_dataframe() -> pd.DataFrame:
     """Return a zero-row DataFrame matching PARQUET_SCHEMA."""
     return pd.DataFrame(
@@ -31,9 +42,9 @@ def _compute_m_grid(m_plus_full: int, n_min: int) -> list[int]:
     """Return sorted unique m values to sweep, all <= m_plus_full.
 
     Always includes m_plus_full itself ("full" entry). Excludes candidates
-    above m_plus_full. Deduplicates in case m_plus_full equals a candidate.
+    outside [n_min, m_plus_full]. Deduplicates in case m_plus_full equals a candidate.
     """
-    grid = [m for m in M_GRID_CANDIDATES if m <= m_plus_full]
+    grid = [m for m in M_GRID_CANDIDATES if n_min <= m <= m_plus_full]
     if m_plus_full not in grid:
         grid.append(m_plus_full)
     return sorted(set(grid))
@@ -58,7 +69,7 @@ def _subsample_to_m(
     if len(cal_pos_indices) <= m:
         return df.copy()
 
-    rng = np.random.default_rng(hash((topic_id, global_seed)) & 0xFFFFFFFF)
+    rng = np.random.default_rng(_topic_seed(topic_id, global_seed))
     permuted = rng.permutation(cal_pos_indices)
     drop_indices = permuted[m:]
     return df.drop(index=drop_indices).copy()

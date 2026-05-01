@@ -218,6 +218,7 @@ def calibrate(
         r_hat_grid=R_hat,
         p_hb_grid=p_hb,
         alpha_dagger_grid=alpha_dagger,
+        slack_mat=slack_mat,
         config_snapshot={
             "alpha": alpha,
             "delta_eta": delta_eta,

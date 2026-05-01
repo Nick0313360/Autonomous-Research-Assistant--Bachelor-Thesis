@@ -19,6 +19,7 @@ class LTTBudget(BaseModel):
     N_min_formula: str = "ceil(ln(1/delta_LTT)/(-ln(1-alpha)))"
     c_human: float = 5.0
     c_llm: float = 0.001
+    delta_bootstrap: float = 0.05
 
     @model_validator(mode="after")
     def _check_delta_split(self) -> "LTTBudget":

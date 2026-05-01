@@ -22,6 +22,7 @@ class CertificationResult:
     r_hat_grid: np.ndarray             # (G,) R̂
     p_hb_grid: np.ndarray             # (G,) p_HB
     alpha_dagger_grid: np.ndarray      # (G,) α†
+    slack_mat: np.ndarray              # (G, m_plus) — pkl only, excluded from JSON
     config_snapshot: dict
     timestamp: str                     # ISO-8601
 

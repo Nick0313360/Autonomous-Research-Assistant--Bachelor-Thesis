@@ -22,13 +22,11 @@ def _make_synthetic_parquet(
     df = df.rename(columns={"y": "y_abstract"})
 
     if n_calib_pos is not None:
-        pos_idx = df.index[df["y_abstract"] == 1].tolist()
-        neg_idx = df.index[df["y_abstract"] == 0].tolist()
+        pos_iloc = np.where(df["y_abstract"].to_numpy() == 1)[0]
+        neg_iloc = np.where(df["y_abstract"].to_numpy() == 0)[0]
         is_calib = np.zeros(len(df), dtype=int)
-        for i in pos_idx[:n_calib_pos]:
-            is_calib[i] = 1
-        for i in neg_idx[:200]:
-            is_calib[i] = 1
+        is_calib[pos_iloc[:n_calib_pos]] = 1
+        is_calib[neg_iloc[:200]] = 1
         df["is_calib"] = is_calib
     else:
         rng = np.random.default_rng(20260429)

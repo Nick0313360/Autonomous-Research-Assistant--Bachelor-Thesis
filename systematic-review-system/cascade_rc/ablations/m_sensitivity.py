@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import tempfile
 from pathlib import Path
 
@@ -114,8 +115,7 @@ def _run_topic(
         skipped=True if the topic was skipped due to m_plus_full < N_min.
     """
     # Compute N_min locally to avoid importing calibration module before skip check
-    from cascade_rc.calibration.main_calibrate import _compute_n_min
-    n_min = _compute_n_min(config.ltt.alpha, config.ltt.delta_LTT)
+    n_min = math.ceil(math.log(1 / config.ltt.delta_LTT) / (-math.log(1 - config.ltt.alpha)))
 
     df = pd.read_parquet(parquet_path)
     m_plus_full = int(((df["is_calib"] == 1) & (df["y_abstract"] == 1)).sum())

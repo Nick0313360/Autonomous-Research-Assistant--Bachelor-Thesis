@@ -52,7 +52,8 @@ def test_json_summary_keys(tmp_path: Path) -> None:
     CertificateStore.save("CD000001", _make_result(), tmp_path)
     with open(tmp_path / "certificates" / "CD000001.json") as f:
         summary = json.load(f)
-    for key in ("topic", "status", "m_plus", "timestamp", "n_certified", "theta_hat"):
+    for key in ("topic", "status", "m_plus", "timestamp", "n_certified", "theta_hat",
+                "abstain_reason", "config_snapshot"):
         assert key in summary, f"Missing key: {key}"
 
 

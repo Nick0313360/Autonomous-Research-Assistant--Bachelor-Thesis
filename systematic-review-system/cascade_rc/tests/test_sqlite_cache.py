@@ -191,7 +191,7 @@ def test_resumability(tmp_path: Path) -> None:
             parsed_json=parsed,
         )
 
-    def _mock(n_responses: int) -> MagicMock:
+    def _mock() -> MagicMock:
         c = MagicMock()
         c.GPT_MODEL = "gpt-oss:120b"
         c.complete = AsyncMock(return_value=_resp(True))
@@ -203,7 +203,7 @@ def test_resumability(tmp_path: Path) -> None:
 
     # Phase 1 — pre-crash: complete first 3 PMIDs
     cache = SQLiteEnsembleCache(db_path)
-    client1 = _mock(15)
+    client1 = _mock()
     for pmid in all_pmids[:3]:
         asyncio.run(
             screen_abstract_ensemble(
@@ -216,7 +216,7 @@ def test_resumability(tmp_path: Path) -> None:
 
     # Phase 2 — restart: process remaining 97 PMIDs
     cache2 = SQLiteEnsembleCache(db_path)
-    client2 = _mock(485)
+    client2 = _mock()
     for pmid in all_pmids[3:]:
         asyncio.run(
             screen_abstract_ensemble(

@@ -182,7 +182,8 @@ def _run_topic(
 def _plot_topic(df_topic: pd.DataFrame, out_dir: Path, topic_id: str) -> None:
     """Save 3-panel figure for one topic: WSS@95 / mean η̂⁻⋆ / abstention."""
     import matplotlib
-    matplotlib.use("Agg")
+    if matplotlib.get_backend().lower() != "agg":
+        matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     plot_dir = out_dir / "plots"
@@ -205,9 +206,11 @@ def _plot_topic(df_topic: pd.DataFrame, out_dir: Path, topic_id: str) -> None:
                      markersize=10, label="recall missed")
     axes[0].set_ylabel("WSS@95")
     axes[0].set_title(topic_id)
-    axes[0].legend(fontsize=8)
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        axes[0].legend(fontsize=8)
 
-    non_abstained = ~df_topic["abstention"].to_numpy()
+    non_abstained = ~abstention.astype(bool)
     if non_abstained.any():
         axes[1].plot(m[non_abstained], eta[non_abstained], "go-")
     axes[1].set_ylabel("mean η̂⁻⋆")
@@ -227,7 +230,8 @@ def _plot_topic(df_topic: pd.DataFrame, out_dir: Path, topic_id: str) -> None:
 def _plot_overview(df: pd.DataFrame, out_dir: Path) -> None:
     """Save combined 3-panel figure: all topics faded + bold median lines."""
     import matplotlib
-    matplotlib.use("Agg")
+    if matplotlib.get_backend().lower() != "agg":
+        matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     plot_dir = out_dir / "plots"

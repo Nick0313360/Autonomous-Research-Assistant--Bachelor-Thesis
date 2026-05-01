@@ -321,3 +321,61 @@ def run_sweep(
             _plot_overview(df, out_dir)
 
     return df
+
+
+def main() -> None:
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="m₊ sensitivity sweep for CASCADE-RC",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--data-dir", type=Path,
+        default=Path("artefacts/cascade_rc/data"),
+        help="Directory containing enriched topic parquets",
+    )
+    parser.add_argument(
+        "--out-dir", type=Path,
+        default=Path("artefacts/cascade_rc/ablations"),
+        help="Output directory for parquet, JSON, and plots",
+    )
+    parser.add_argument("--seed", type=int, default=42, help="Global RNG seed")
+    parser.add_argument(
+        "--topics", nargs="+", default=None,
+        help="Restrict sweep to these topic IDs (space-separated)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Write schema-only parquet without running calibration",
+    )
+    parser.add_argument(
+        "--n-jobs", type=int, default=1,
+        help="Parallel topic workers (loky backend)",
+    )
+    args = parser.parse_args()
+
+    df = run_sweep(
+        data_dir=args.data_dir,
+        out_dir=args.out_dir,
+        seed=args.seed,
+        topics_filter=args.topics,
+        n_jobs=args.n_jobs,
+        dry_run=args.dry_run,
+    )
+
+    if args.dry_run:
+        print(
+            f"DRY-RUN: schema written to {args.out_dir / 'm_sensitivity.parquet'}"
+        )
+    else:
+        print(
+            f"Sweep complete: {len(df)} rows, "
+            f"{df['topic_id'].nunique()} topics"
+        )
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

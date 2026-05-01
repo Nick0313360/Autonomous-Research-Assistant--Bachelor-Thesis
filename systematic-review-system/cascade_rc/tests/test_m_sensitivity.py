@@ -64,3 +64,36 @@ def test_dry_run_schema(tmp_path: Path) -> None:
     skipped_path = tmp_path / "out" / "skipped_topics.json"
     assert skipped_path.exists(), "skipped_topics.json not created"
     assert json.loads(skipped_path.read_text()) == []
+
+
+def test_nested_subsamples(tmp_path: Path) -> None:
+    """m=26 subsample is a strict prefix of m=50 (nested-seed property).
+
+    Both calls use the same (topic_id, global_seed) pair; m is intentionally
+    excluded from the hash. permuted[:26] must be a subset of permuted[:50].
+    Do NOT add m to the hash — that would break this guarantee.
+    """
+    from cascade_rc.ablations.m_sensitivity import _subsample_to_m
+
+    parquet_path = _make_synthetic_parquet(tmp_path, n=5_000, seed=1)
+    df = pd.read_parquet(parquet_path)
+
+    m_plus = int(((df["is_calib"] == 1) & (df["y_abstract"] == 1)).sum())
+    assert m_plus >= 50, f"Not enough cal positives for test: {m_plus}"
+
+    df_26 = _subsample_to_m(df, 26, "TOPIC_A", global_seed=42)
+    df_50 = _subsample_to_m(df, 50, "TOPIC_A", global_seed=42)
+
+    kept_26 = set(
+        df_26.index[(df_26["is_calib"] == 1) & (df_26["y_abstract"] == 1)].tolist()
+    )
+    kept_50 = set(
+        df_50.index[(df_50["is_calib"] == 1) & (df_50["y_abstract"] == 1)].tolist()
+    )
+
+    assert len(kept_26) == 26, f"Expected 26 cal positives, got {len(kept_26)}"
+    assert len(kept_50) == 50, f"Expected 50 cal positives, got {len(kept_50)}"
+    assert kept_26.issubset(kept_50), (
+        "m=26 kept indices must be a strict subset of m=50 kept indices. "
+        "Nested-seed guarantee requires m to be excluded from the hash."
+    )

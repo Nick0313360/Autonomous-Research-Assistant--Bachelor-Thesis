@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 M_GRID_CANDIDATES: list[int] = [26, 35, 50, 75, 100]
@@ -24,6 +25,43 @@ def _empty_dataframe() -> pd.DataFrame:
     return pd.DataFrame(
         {col: pd.Series(dtype=dtype) for col, dtype in PARQUET_SCHEMA.items()}
     )
+
+
+def _compute_m_grid(m_plus_full: int, n_min: int) -> list[int]:
+    """Return sorted unique m values to sweep, all <= m_plus_full.
+
+    Always includes m_plus_full itself ("full" entry). Excludes candidates
+    above m_plus_full. Deduplicates in case m_plus_full equals a candidate.
+    """
+    grid = [m for m in M_GRID_CANDIDATES if m <= m_plus_full]
+    if m_plus_full not in grid:
+        grid.append(m_plus_full)
+    return sorted(set(grid))
+
+
+def _subsample_to_m(
+    df: pd.DataFrame,
+    m: int,
+    topic_id: str,
+    global_seed: int,
+) -> pd.DataFrame:
+    """Return df with calibration positives subsampled to exactly m rows.
+
+    Seed is derived from (topic_id, global_seed) only — NOT m — so that
+    smaller m values are strict prefixes of larger ones (nested subsets).
+    Unsampled calibration positives are dropped entirely; test rows
+    (is_calib==0) are untouched, keeping the test split constant.
+    """
+    cal_pos_mask = (df["is_calib"] == 1) & (df["y_abstract"] == 1)
+    cal_pos_indices = df.index[cal_pos_mask].to_numpy()
+
+    if len(cal_pos_indices) <= m:
+        return df.copy()
+
+    rng = np.random.default_rng(hash((topic_id, global_seed)) & 0xFFFFFFFF)
+    permuted = rng.permutation(cal_pos_indices)
+    drop_indices = permuted[m:]
+    return df.drop(index=drop_indices).copy()
 
 
 def run_sweep(

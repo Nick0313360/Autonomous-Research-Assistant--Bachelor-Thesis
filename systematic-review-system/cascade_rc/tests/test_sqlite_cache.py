@@ -160,3 +160,145 @@ def test_stats_rows_per_seed_b(tmp_path: Path) -> None:
     assert s["unique_pmids"] == 1
     assert s["rows_per_seed_b"] == {"0": 1, "1": 1, "2": 1, "3": 1, "4": 1}
     cache.close()
+
+
+# ---------------------------------------------------------------------------
+# Integration tests (cache + ensemble)
+# ---------------------------------------------------------------------------
+
+def test_resumability(tmp_path: Path) -> None:
+    """
+    Simulate a crash after 3/100 PMIDs, restart, assert 97×5=485 new LLM calls.
+
+    Phase 1 ('pre-crash'): run ensemble for PMIDs 0-2 with a mock client.
+                          This populates 15 cache rows (3 PMIDs × 5 slots).
+    Phase 2 ('restart'):  fresh mock, run PMIDs 3-99 (97 PMIDs).
+                          Each needs 5 LLM calls → 485 total.
+    Phase 3 ('verify'):   run all 100 PMIDs again; assert zero new LLM calls
+                          (every slot already cached).
+    """
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from infrastructure.llm_client import LLMResponse
+    from cascade_rc.cache.llm_ensemble import screen_abstract_ensemble
+
+    def _resp(satisfies: bool) -> LLMResponse:
+        parsed = {"satisfies": satisfies, "confidence": 0.9, "reasoning": "test"}
+        return LLMResponse(
+            content=str(parsed), model_used="gpt-oss:120b",
+            input_tokens=10, output_tokens=5, latency_ms=20.0,
+            parsed_json=parsed,
+        )
+
+    def _mock(n_responses: int) -> MagicMock:
+        c = MagicMock()
+        c.GPT_MODEL = "gpt-oss:120b"
+        c.complete = AsyncMock(return_value=_resp(True))
+        return c
+
+    pico = {"population": "", "intervention": "", "comparator": "", "outcome": "", "study_design": ""}
+    all_pmids = [f"{i:08d}" for i in range(100)]
+    db_path = tmp_path / "resume.db"
+
+    # Phase 1 — pre-crash: complete first 3 PMIDs
+    cache = SQLiteEnsembleCache(db_path)
+    client1 = _mock(15)
+    for pmid in all_pmids[:3]:
+        asyncio.run(
+            screen_abstract_ensemble(
+                "T", "A", pico, pmid=pmid, n_calls=5, temperature=0.7,
+                _client=client1, _cache=cache, _template_v="v1",
+            )
+        )
+    assert client1.complete.call_count == 15
+    cache.close()
+
+    # Phase 2 — restart: process remaining 97 PMIDs
+    cache2 = SQLiteEnsembleCache(db_path)
+    client2 = _mock(485)
+    for pmid in all_pmids[3:]:
+        asyncio.run(
+            screen_abstract_ensemble(
+                "T", "A", pico, pmid=pmid, n_calls=5, temperature=0.7,
+                _client=client2, _cache=cache2, _template_v="v1",
+            )
+        )
+    assert client2.complete.call_count == 97 * 5
+    cache2.close()
+
+    # Phase 3 — verify: re-run all 100; expect zero new calls
+    cache3 = SQLiteEnsembleCache(db_path)
+    client3 = MagicMock()
+    client3.GPT_MODEL = "gpt-oss:120b"
+    client3.complete = AsyncMock(side_effect=Exception("should not be called"))
+    for pmid in all_pmids:
+        asyncio.run(
+            screen_abstract_ensemble(
+                "T", "A", pico, pmid=pmid, n_calls=5, temperature=0.7,
+                _client=client3, _cache=cache3, _template_v="v1",
+            )
+        )
+    assert client3.complete.call_count == 0
+    cache3.close()
+
+
+def test_seed_partition(tmp_path: Path) -> None:
+    """
+    Populate all 5 slots, delete seed_b=2, re-run: exactly one LLM call (slot 2 only).
+    Validates that slot-level independence is enforced by the cache key.
+    """
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from infrastructure.llm_client import LLMResponse
+    from cascade_rc.cache.llm_ensemble import screen_abstract_ensemble
+
+    def _resp(satisfies: bool) -> LLMResponse:
+        parsed = {"satisfies": satisfies, "confidence": 0.9, "reasoning": "test"}
+        return LLMResponse(
+            content=str(parsed), model_used="gpt-oss:120b",
+            input_tokens=10, output_tokens=5, latency_ms=20.0,
+            parsed_json=parsed,
+        )
+
+    def _mock(responses: list[LLMResponse]) -> MagicMock:
+        c = MagicMock()
+        c.GPT_MODEL = "gpt-oss:120b"
+        c.complete = AsyncMock(side_effect=responses)
+        return c
+
+    pico = {"population": "", "intervention": "", "comparator": "", "outcome": "", "study_design": ""}
+    pmid = "55555555"
+    db_path = tmp_path / "seed_part.db"
+
+    # First run: populate all 5 slots
+    cache = SQLiteEnsembleCache(db_path)
+    client1 = _mock([_resp(True)] * 5)
+    asyncio.run(
+        screen_abstract_ensemble(
+            "T", "A", pico, pmid=pmid, n_calls=5, temperature=0.7,
+            _client=client1, _cache=cache, _template_v="v1",
+        )
+    )
+    assert client1.complete.call_count == 5
+    cache.close()
+
+    # Delete only seed_b=2
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("DELETE FROM llm_calls WHERE pmid=? AND seed_b=2", (pmid,))
+    conn.commit()
+    conn.close()
+
+    # Re-run: only slot 2 should be re-called
+    cache2 = SQLiteEnsembleCache(db_path)
+    client2 = _mock([_resp(True)])  # exactly one response needed
+    result = asyncio.run(
+        screen_abstract_ensemble(
+            "T", "A", pico, pmid=pmid, n_calls=5, temperature=0.7,
+            _client=client2, _cache=cache2, _template_v="v1",
+        )
+    )
+    assert client2.complete.call_count == 1, f"Expected 1 call, got {client2.complete.call_count}"
+    assert len(result.votes) == 5
+    cache2.close()

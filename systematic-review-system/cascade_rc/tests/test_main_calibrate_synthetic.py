@@ -88,3 +88,30 @@ def test_abstention_when_m_plus_below_N_min(tmp_path: Path) -> None:
     assert none_a is None
     assert none_b is None
     assert reason.startswith("abstained:m_plus=20"), f"unexpected reason: {reason}"
+
+
+# ---------------------------------------------------------------------------
+# test_certification_synthetic
+# ---------------------------------------------------------------------------
+
+def test_certification_synthetic(tmp_path: Path) -> None:
+    """Synthetic running example (n=10_000, seed=0) certifies non-empty Λ̂ for α=0.10.
+
+    θ̂ is pinned to the value computed on first correct run.
+    Reference computed 2026-05-01 with K=20, seed=0, split_seed=20260429.
+    Tolerance: ±1 grid step per axis (atol = 1/(K-1) ≈ 0.0526).
+    """
+    from cascade_rc.calibration.main_calibrate import calibrate
+    from cascade_rc.certificates.store import CertificationResult
+
+    calib_parquet = _make_calib_parquet(tmp_path)
+    cfg = _make_config(tmp_path)
+    result = calibrate("synthetic", calib_parquet, cfg)
+
+    assert isinstance(result, CertificationResult)
+    assert result.status == "certified"
+    assert result.lambda_hat_mask.sum() > 0, "Λ̂ must be non-empty"
+
+    # Reference θ̂ computed 2026-05-01, seed=0, K=20, split_seed=20260429
+    REFERENCE_THETA_HAT = np.array([0.0, 0.0, 0.0])
+    np.testing.assert_allclose(result.theta_hat, REFERENCE_THETA_HAT, atol=1.0 / 19)

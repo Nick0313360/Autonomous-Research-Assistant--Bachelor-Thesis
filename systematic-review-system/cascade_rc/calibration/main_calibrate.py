@@ -11,7 +11,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 
+from cascade_rc.calibration.hb_pvalue import hb_pvalues
+from cascade_rc.calibration.surrogate_loss import grid as _theta_grid, loss_tensor, slack_tensor
+from cascade_rc.calibration.walker import safest_to_riskiest_order, walk_reject
+from cascade_rc.calibration.wsr_lcb import wsr_lcb_one_sided
 from cascade_rc.certificates.store import CertificationResult, CertificateStore
 from cascade_rc.config import CascadeRCConfig
 
@@ -60,11 +65,5 @@ def calibrate(
     N_min = _compute_n_min(alpha, delta_ltt)
     if m_plus < N_min:
         return (None, None, f"abstained:m_plus={m_plus}<{N_min}")
-
-    # Deferred imports — only needed for the full calibration path (Task 5)
-    from cascade_rc.calibration.hb_pvalue import hb_pvalues  # noqa: F401
-    from cascade_rc.calibration.surrogate_loss import grid as _theta_grid, loss_tensor, slack_tensor  # noqa: F401
-    from cascade_rc.calibration.walker import safest_to_riskiest_order, walk_reject  # noqa: F401
-    from cascade_rc.calibration.wsr_lcb import wsr_lcb_one_sided  # noqa: F401
 
     raise NotImplementedError("Full calibration not yet implemented — Task 5")

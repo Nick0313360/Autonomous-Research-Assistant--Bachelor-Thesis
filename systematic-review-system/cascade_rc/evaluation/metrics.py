@@ -131,3 +131,112 @@ def slack_ratio_diagnostic(
     """
     with np.errstate(divide="ignore", invalid="ignore"):
         return np.where(eta_boot_upper > 0.0, eta_lcb / eta_boot_upper, np.nan)
+
+
+_SCREENED_DECISIONS: frozenset[str] = frozenset(
+    {"auto_accept", "llm_escalate", "human_review"}
+)
+
+
+def _derive_routing(df: pd.DataFrame, theta_hat: np.ndarray) -> pd.DataFrame:
+    """Apply certified threshold θ̂ = (λ_lo, λ_hi, τ_SE) to produce a decision column.
+
+    Args:
+        df:        DataFrame with columns s (float) and u (float).
+        theta_hat: (3,) array [λ_lo, λ_hi, τ_SE].
+
+    Returns:
+        Copy of df with column 'decision' ∈
+        {auto_accept, auto_reject, llm_escalate, human_review}.
+    """
+    lam_lo = float(theta_hat[0])
+    lam_hi = float(theta_hat[1])
+    tau_se = float(theta_hat[2])
+
+    s = df["s"].to_numpy(dtype=np.float64)
+    u = df["u"].to_numpy(dtype=np.float64)
+
+    decision = np.empty(len(df), dtype=object)
+    decision[s < lam_lo] = "auto_reject"
+    decision[s >= lam_hi] = "auto_accept"
+    uncertain = (s >= lam_lo) & (s < lam_hi)
+    decision[uncertain & (u >= tau_se)] = "llm_escalate"
+    decision[uncertain & (u < tau_se)] = "human_review"
+
+    out = df.copy()
+    out["decision"] = decision
+    return out
+
+
+def _predictions_from_routing(routing: pd.DataFrame) -> np.ndarray:
+    """Convert decision column to binary predictions: 1=screened, 0=skipped."""
+    return routing["decision"].isin(_SCREENED_DECISIONS).to_numpy(dtype=np.int8)
+
+
+def main() -> None:
+    import argparse
+    import json
+    import sys
+
+    from cascade_rc.certificates.store import CertificateStore
+    from cascade_rc.config import CascadeRCConfig
+
+    parser = argparse.ArgumentParser(
+        description="CASCADE-RC per-topic evaluation metrics",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--topic", required=True, help="Topic ID, e.g. CD008874")
+    parser.add_argument(
+        "--artefact-dir", type=Path, default=Path("artefacts/cascade_rc"),
+        help="Root artefact directory (contains certificates/ and data/)",
+    )
+    parser.add_argument(
+        "--calib-parquet", type=Path, default=None,
+        help="Scored parquet (columns: pmid, s, u, y_abstract, llm_y_hat, is_calib). "
+             "Default: <artefact-dir>/data/<topic>.parquet",
+    )
+    args = parser.parse_args()
+
+    artefact_dir: Path = Path(args.artefact_dir)
+    calib_parquet: Path = (
+        args.calib_parquet or artefact_dir / "data" / f"{args.topic}.parquet"
+    )
+
+    cfg = CascadeRCConfig()
+    cert = CertificateStore.load(args.topic, artefact_dir)
+
+    df = pd.read_parquet(calib_parquet)
+    df_test = df[df["is_calib"] == 0].reset_index(drop=True)
+
+    routing_df = _derive_routing(df_test, cert.theta_hat)
+    routing_dir = artefact_dir / "routing"
+    routing_dir.mkdir(parents=True, exist_ok=True)
+    routing_df[["pmid", "decision"]].to_parquet(
+        routing_dir / f"{args.topic}.parquet", index=False
+    )
+
+    llm_vol = llm_query_volume(routing_df[["pmid", "decision"]])
+
+    predictions = _predictions_from_routing(routing_df)
+    y_true = df_test["y_abstract"].to_numpy(dtype=np.int8)
+    wss_result = wss_at_recall(predictions, y_true, target_recall=0.95)
+
+    eta_boot = bootstrap_eta_upper(
+        cert.slack_mat, delta=cfg.ltt.delta_bootstrap, B=1000, seed=0
+    )
+    ratio = slack_ratio_diagnostic(cert.eta_lcb_grid, eta_boot)
+
+    output = {
+        "topic": args.topic,
+        "status": cert.status,
+        "wss95": wss_result,
+        "llm_volume": llm_vol,
+        "slack_ratio_mean": float(np.nanmean(ratio)),
+        "slack_ratio_std": float(np.nanstd(ratio)),
+    }
+    print(json.dumps(output))
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

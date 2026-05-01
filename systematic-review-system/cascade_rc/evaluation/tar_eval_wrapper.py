@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -15,9 +16,8 @@ _VENDOR_SCRIPT: Path = (
     Path(__file__).parent.parent / "baselines" / "tar_eval_vendor" / "tar_eval.py"
 )
 
-# Keys confirmed by running the vendored script (Step 3 of Task 5).
-# Observed output from: python tar_eval.py <qrel> <results>
-# Recall appears as "r" (not "recall") in tar_eval output.
+# Confirmed by running: python tar_eval.py <qrel> <results>
+# Recall is emitted as "r" (not "recall") by eval_measures.py.
 REQUIRED_KEYS: frozenset[str] = frozenset({"wss_100", "wss_95", "r", "norm_area"})
 
 
@@ -47,7 +47,7 @@ def run_tar_eval(
         ValueError: REQUIRED_KEYS missing from parsed output.
     """
     proc = subprocess.run(
-        ["python3", str(_VENDOR_SCRIPT), str(qrels_file), str(results_file)],
+        [sys.executable, str(_VENDOR_SCRIPT), str(qrels_file), str(results_file)],
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -70,7 +70,7 @@ def run_tar_eval(
         try:
             parsed[metric] = float(value_str)
         except ValueError:
-            continue
+            continue  # skip non-float fields (description rows, list-valued CGat, etc.)
 
     missing = REQUIRED_KEYS - set(parsed)
     if missing:

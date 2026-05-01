@@ -197,7 +197,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    artefact_dir: Path = Path(args.artefact_dir)
+    artefact_dir: Path = args.artefact_dir
     calib_parquet: Path = (
         args.calib_parquet or artefact_dir / "data" / f"{args.topic}.parquet"
     )
@@ -226,6 +226,15 @@ def main() -> None:
     )
     ratio = slack_ratio_diagnostic(cert.eta_lcb_grid, eta_boot)
 
+    import math
+
+    def _nan_to_null(obj: object) -> object:
+        if isinstance(obj, float) and math.isnan(obj):
+            return None
+        if isinstance(obj, dict):
+            return {k: _nan_to_null(v) for k, v in obj.items()}
+        return obj
+
     output = {
         "topic": args.topic,
         "status": cert.status,
@@ -234,8 +243,7 @@ def main() -> None:
         "slack_ratio_mean": float(np.nanmean(ratio)),
         "slack_ratio_std": float(np.nanstd(ratio)),
     }
-    print(json.dumps(output))
-    sys.exit(0)
+    print(json.dumps(_nan_to_null(output)))
 
 
 if __name__ == "__main__":

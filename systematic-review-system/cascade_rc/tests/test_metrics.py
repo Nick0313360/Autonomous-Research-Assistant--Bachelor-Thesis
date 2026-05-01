@@ -6,6 +6,8 @@ import pandas as pd
 import pytest
 
 from cascade_rc.evaluation.metrics import (
+    _derive_routing,
+    _predictions_from_routing,
     abstention_rate,
     bootstrap_eta_upper,
     llm_query_volume,
@@ -154,3 +156,44 @@ def test_slack_ratio_diagnostic_zero_denominator_gives_nan() -> None:
     ratio = slack_ratio_diagnostic(eta_lcb, eta_boot)
     assert np.isnan(ratio[0])
     assert ratio[1] == pytest.approx(0.3)
+
+
+# ---------------------------------------------------------------------------
+# _derive_routing
+# ---------------------------------------------------------------------------
+
+def test_derive_routing_all_four_decisions() -> None:
+    """Each routing zone produces the correct decision."""
+    # theta_hat = (lam_lo=0.3, lam_hi=0.7, tau_se=0.5)
+    theta_hat = np.array([0.3, 0.7, 0.5])
+    df = pd.DataFrame({
+        "pmid": ["a", "b", "c", "d"],
+        "s":    [0.1, 0.9, 0.5, 0.5],   # auto_reject, auto_accept, uncertain, uncertain
+        "u":    [0.5, 0.5, 0.8, 0.2],   # (irrelevant), (irrelevant), llm_escalate, human_review
+    })
+    result = _derive_routing(df, theta_hat)
+    assert list(result["decision"]) == [
+        "auto_reject", "auto_accept", "llm_escalate", "human_review"
+    ]
+
+
+def test_derive_routing_does_not_mutate_input() -> None:
+    """_derive_routing returns a copy and does not add 'decision' to the input df."""
+    theta_hat = np.array([0.3, 0.7, 0.5])
+    df = pd.DataFrame({"pmid": ["a"], "s": [0.5], "u": [0.6]})
+    _derive_routing(df, theta_hat)
+    assert "decision" not in df.columns
+
+
+# ---------------------------------------------------------------------------
+# _predictions_from_routing
+# ---------------------------------------------------------------------------
+
+def test_predictions_from_routing_screened_vs_skipped() -> None:
+    """auto_accept/llm_escalate/human_review → 1; auto_reject → 0."""
+    routing = pd.DataFrame({
+        "pmid": ["a", "b", "c", "d"],
+        "decision": ["auto_accept", "auto_reject", "llm_escalate", "human_review"],
+    })
+    preds = _predictions_from_routing(routing)
+    np.testing.assert_array_equal(preds, [1, 0, 1, 1])

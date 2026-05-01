@@ -115,3 +115,44 @@ def test_certification_synthetic(tmp_path: Path) -> None:
     # Reference θ̂ computed 2026-05-01, seed=0, K=20, split_seed=20260429
     REFERENCE_THETA_HAT = np.array([0.0, 0.0, 0.0])
     np.testing.assert_allclose(result.theta_hat, REFERENCE_THETA_HAT, atol=1.0 / 19)
+
+
+# ---------------------------------------------------------------------------
+# test_resume_from_partial
+# ---------------------------------------------------------------------------
+
+def test_resume_from_partial(tmp_path: Path) -> None:
+    """Restarting from a partial checkpoint produces bytes-identical Λ̂.
+
+    Strategy:
+    1. Run calibrate() fully (no-checkpoint baseline) → result_full.
+    2. Manually construct a partial checkpoint from the first 500 eta_lcb values
+       of result_full (simulating a run interrupted after 500 grid evaluations).
+    3. Run calibrate() on a fresh topic that sees the planted partial → result_resumed.
+    4. Assert lambda_hat_mask bytes-identical between result_full and result_resumed.
+    """
+    from cascade_rc.calibration.main_calibrate import calibrate
+    from cascade_rc.calibration.surrogate_loss import grid as sg
+    from cascade_rc.certificates.store import CertificateStore
+
+    calib_parquet = _make_calib_parquet(tmp_path)
+    cfg = _make_config(tmp_path)
+
+    G = len(sg(cfg.ltt.K))
+    # Step 1: Full run (large chunk so no real checkpoints, clean baseline)
+    result_full = calibrate("topic_full", calib_parquet, cfg, chunk_size=G + 1)
+
+    # Step 2: Plant partial checkpoint at grid index 500 for "topic_resume"
+    partial_state = {
+        "grid_idx_completed": min(500, G),
+        "eta_lcb_partial": result_full.eta_lcb_grid[: min(500, G)].copy(),
+    }
+    CertificateStore.save_partial("topic_resume", partial_state, tmp_path)
+
+    # Step 3: Resume run — should skip indices 0:500 and compute the rest
+    result_resumed = calibrate("topic_resume", calib_parquet, cfg, chunk_size=G + 1)
+
+    # Step 4: Λ̂ must be bytes-identical
+    assert result_resumed.lambda_hat_mask.tobytes() == result_full.lambda_hat_mask.tobytes(), (
+        "Resumed Λ̂ differs from full run — checkpointing is broken"
+    )

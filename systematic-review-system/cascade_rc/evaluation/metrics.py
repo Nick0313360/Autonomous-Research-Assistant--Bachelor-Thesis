@@ -81,7 +81,7 @@ def llm_query_volume(routing: pd.DataFrame) -> dict:
     if unknown:
         raise ValueError(f"Unexpected decision values: {unknown!r}")
     counts = routing["decision"].value_counts().to_dict()
-    total = len(routing)
+    total = int(len(routing))
     llm_escalate = counts.get("llm_escalate", 0)
     return {
         "auto_accept":  int(counts.get("auto_accept", 0)),

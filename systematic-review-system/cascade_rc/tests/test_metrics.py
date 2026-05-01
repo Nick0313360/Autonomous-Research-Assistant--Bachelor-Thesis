@@ -42,3 +42,60 @@ def test_wss_at_recall_recall_target_missed() -> None:
     assert result["status"] == "recall_target_missed"
     assert np.isnan(result["wss"])
     assert result["achieved_recall"] == pytest.approx(1.0 / 3.0, rel=1e-6)
+
+
+import pandas as pd
+from cascade_rc.evaluation.metrics import abstention_rate, llm_query_volume
+
+
+# ---------------------------------------------------------------------------
+# abstention_rate
+# ---------------------------------------------------------------------------
+
+def test_abstention_rate_all_certified() -> None:
+    certified = {
+        "CD008874": {"status": "certified"},
+        "CD012080": {"status": "certified"},
+    }
+    assert abstention_rate(certified) == pytest.approx(0.0)
+
+
+def test_abstention_rate_mixed() -> None:
+    certified = {
+        "CD008874": {"status": "certified"},
+        "CD012080": {"status": "abstained"},
+        "CD011768": {"status": "abstained"},
+        "CD011975": {"status": "certified"},
+    }
+    assert abstention_rate(certified) == pytest.approx(0.5)
+
+
+def test_abstention_rate_empty_returns_nan() -> None:
+    assert np.isnan(abstention_rate({}))
+
+
+# ---------------------------------------------------------------------------
+# llm_query_volume
+# ---------------------------------------------------------------------------
+
+def test_llm_query_volume_counts() -> None:
+    routing = pd.DataFrame({
+        "pmid": ["1", "2", "3", "4", "5", "6"],
+        "decision": [
+            "auto_accept", "auto_reject", "auto_reject",
+            "llm_escalate", "human_review", "human_review",
+        ],
+    })
+    result = llm_query_volume(routing)
+    assert result["auto_accept"] == 1
+    assert result["auto_reject"] == 2
+    assert result["llm_escalate"] == 1
+    assert result["human_review"] == 2
+    assert result["total"] == 6
+    assert result["llm_fraction"] == pytest.approx(1.0 / 6.0)
+
+
+def test_llm_query_volume_unknown_decision_raises() -> None:
+    routing = pd.DataFrame({"pmid": ["1"], "decision": ["tier_4_special"]})
+    with pytest.raises(ValueError, match="Unexpected decision values"):
+        llm_query_volume(routing)

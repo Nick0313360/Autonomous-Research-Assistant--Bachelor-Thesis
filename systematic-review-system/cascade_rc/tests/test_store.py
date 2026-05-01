@@ -25,6 +25,7 @@ def _make_result(topic: str = "CD000001") -> CertificationResult:
         r_hat_grid=np.zeros(G),
         p_hb_grid=np.zeros(G),
         alpha_dagger_grid=np.zeros(G),
+        slack_mat=np.zeros((G, 42)),
         config_snapshot={"alpha": 0.10},
         timestamp="2026-05-01T00:00:00+00:00",
     )
@@ -55,6 +56,7 @@ def test_json_summary_keys(tmp_path: Path) -> None:
     for key in ("topic", "status", "m_plus", "timestamp", "n_certified", "theta_hat",
                 "abstain_reason", "config_snapshot"):
         assert key in summary, f"Missing key: {key}"
+    assert "slack_mat" not in summary
 
 
 def test_partial_save_load_delete(tmp_path: Path) -> None:

@@ -53,6 +53,16 @@ def test_wss_at_recall_recall_target_missed() -> None:
     assert result["achieved_recall"] == pytest.approx(1.0 / 3.0, rel=1e-6)
 
 
+def test_wss_at_recall_no_relevant_docs() -> None:
+    """y_true all-zero → status='no_relevant_docs', wss=nan, achieved_recall=nan."""
+    y_true      = np.array([0, 0, 0, 0, 0])
+    predictions = np.array([1, 0, 1, 0, 0])
+    result = wss_at_recall(predictions, y_true, target_recall=0.95)
+    assert result["status"] == "no_relevant_docs"
+    assert np.isnan(result["wss"])
+    assert np.isnan(result["achieved_recall"])
+
+
 # ---------------------------------------------------------------------------
 # abstention_rate
 # ---------------------------------------------------------------------------

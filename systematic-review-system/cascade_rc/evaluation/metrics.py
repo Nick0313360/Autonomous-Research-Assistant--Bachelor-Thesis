@@ -203,7 +203,16 @@ def main() -> None:
     )
 
     cfg = CascadeRCConfig()
-    cert = CertificateStore.load(args.topic, artefact_dir)
+    try:
+        cert = CertificateStore.load(args.topic, artefact_dir)
+    except FileNotFoundError:
+        import sys
+        print(
+            f"No certificate found for topic {args.topic!r} in {artefact_dir}. "
+            "Run calibration first (or the topic may have abstained).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     df = pd.read_parquet(calib_parquet)
     df_test = df[df["is_calib"] == 0].reset_index(drop=True)
@@ -233,6 +242,8 @@ def main() -> None:
             return None
         if isinstance(obj, dict):
             return {k: _nan_to_null(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_nan_to_null(v) for v in obj]
         return obj
 
     output = {

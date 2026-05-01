@@ -232,3 +232,48 @@ def calibrate(
     CertificateStore.delete_partial(topic_id, artefact_dir)
 
     return result
+
+
+def main() -> None:
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="CASCADE-RC calibration — Algorithm 1",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--topic", required=True, help="Topic identifier, e.g. CD008874")
+    parser.add_argument(
+        "--calib-parquet", required=True, type=Path,
+        help="Path to calibration parquet (columns: pmid,s,u,y_abstract,llm_y_hat,is_calib)",
+    )
+    parser.add_argument(
+        "--artefact-dir", type=Path, default=None,
+        help="Override artefact_dir from config",
+    )
+    parser.add_argument(
+        "--chunk-size", type=int, default=500,
+        help="Grid points per WSR checkpoint batch",
+    )
+    args = parser.parse_args()
+
+    cfg = CascadeRCConfig()
+
+    result = calibrate(
+        topic_id=args.topic,
+        calib_parquet=args.calib_parquet,
+        config=cfg,
+        artefact_dir=args.artefact_dir,
+        chunk_size=args.chunk_size,
+    )
+
+    if isinstance(result, tuple):
+        print(f"ABSTAINED: {result[2]}")
+        sys.exit(0)
+
+    print(f"CERTIFIED: Λ̂={result.lambda_hat_mask.sum()} points  θ̂={result.theta_hat.tolist()}")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

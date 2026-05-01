@@ -179,6 +179,89 @@ def _run_topic(
     return rows, False
 
 
+def _plot_topic(df_topic: pd.DataFrame, out_dir: Path, topic_id: str) -> None:
+    """Save 3-panel figure for one topic: WSS@95 / mean η̂⁻⋆ / abstention."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    plot_dir = out_dir / "plots"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    m = df_topic["m_actual"].to_numpy()
+    wss = df_topic["wss_95"].to_numpy(dtype=float)
+    eta = df_topic["mean_eta_lcb"].to_numpy(dtype=float)
+    abstention = df_topic["abstention"].to_numpy().astype(int)
+    status = df_topic["wss_status"].to_numpy()
+
+    fig, axes = plt.subplots(3, 1, sharex=True, figsize=(6, 8))
+
+    ok_mask = status == "ok"
+    missed_mask = status == "recall_target_missed"
+    if ok_mask.any():
+        axes[0].plot(m[ok_mask], wss[ok_mask], "bo-", label="ok")
+    if missed_mask.any():
+        axes[0].plot(m[missed_mask], np.zeros(missed_mask.sum()), "rx",
+                     markersize=10, label="recall missed")
+    axes[0].set_ylabel("WSS@95")
+    axes[0].set_title(topic_id)
+    axes[0].legend(fontsize=8)
+
+    non_abstained = ~df_topic["abstention"].to_numpy()
+    if non_abstained.any():
+        axes[1].plot(m[non_abstained], eta[non_abstained], "go-")
+    axes[1].set_ylabel("mean η̂⁻⋆")
+
+    axes[2].step(m, abstention, where="mid", color="red")
+    axes[2].set_ylabel("abstention")
+    axes[2].set_yticks([0, 1])
+    axes[2].set_xlabel("m_actual (positives in calibration)")
+
+    plt.tight_layout()
+    fig.savefig(
+        plot_dir / f"m_sensitivity_{topic_id}.png", dpi=150, bbox_inches="tight"
+    )
+    plt.close(fig)
+
+
+def _plot_overview(df: pd.DataFrame, out_dir: Path) -> None:
+    """Save combined 3-panel figure: all topics faded + bold median lines."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    plot_dir = out_dir / "plots"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, axes = plt.subplots(3, 1, sharex=True, figsize=(8, 10))
+
+    for topic_id in df["topic_id"].unique():
+        df_t = df[df["topic_id"] == topic_id]
+        m = df_t["m_actual"].to_numpy()
+        axes[0].plot(m, df_t["wss_95"].to_numpy(dtype=float), "b-",
+                     alpha=0.3, linewidth=1)
+        axes[1].plot(m, df_t["mean_eta_lcb"].to_numpy(dtype=float), "g-",
+                     alpha=0.3, linewidth=1)
+        axes[2].step(m, df_t["abstention"].to_numpy().astype(int),
+                     where="mid", alpha=0.3, linewidth=1)
+
+    for ax, col in zip(axes[:2], ["wss_95", "mean_eta_lcb"]):
+        pivot = df.groupby("m_actual")[col].median()
+        ax.plot(pivot.index, pivot.values, "k-", linewidth=2.5, label="median")
+        ax.legend(fontsize=8)
+
+    axes[0].set_ylabel("WSS@95")
+    axes[1].set_ylabel("mean η̂⁻⋆")
+    axes[2].set_ylabel("abstention indicator")
+    axes[2].set_xlabel("m_actual (positives in calibration)")
+
+    plt.tight_layout()
+    fig.savefig(
+        plot_dir / "m_sensitivity_overview.png", dpi=150, bbox_inches="tight"
+    )
+    plt.close(fig)
+
+
 def run_sweep(
     data_dir: Path,
     out_dir: Path,
@@ -226,4 +309,11 @@ def run_sweep(
 
     df.to_parquet(out_dir / "m_sensitivity.parquet", index=False)
     (out_dir / "skipped_topics.json").write_text(json.dumps(sorted(skipped_topics)))
+
+    if not df.empty:
+        for tid in df["topic_id"].unique():
+            _plot_topic(df[df["topic_id"] == tid], out_dir, tid)
+        if df["topic_id"].nunique() > 1:
+            _plot_overview(df, out_dir)
+
     return df

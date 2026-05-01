@@ -2,9 +2,14 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import pytest
 
-from cascade_rc.evaluation.metrics import wss_at_recall
+from cascade_rc.evaluation.metrics import (
+    abstention_rate,
+    llm_query_volume,
+    wss_at_recall,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -42,10 +47,6 @@ def test_wss_at_recall_recall_target_missed() -> None:
     assert result["status"] == "recall_target_missed"
     assert np.isnan(result["wss"])
     assert result["achieved_recall"] == pytest.approx(1.0 / 3.0, rel=1e-6)
-
-
-import pandas as pd
-from cascade_rc.evaluation.metrics import abstention_rate, llm_query_volume
 
 
 # ---------------------------------------------------------------------------

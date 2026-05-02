@@ -185,3 +185,58 @@ def test_skip_low_prevalence_topic(tmp_path: Path) -> None:
 
     skipped = json.loads((out_dir / "skipped_topics.json").read_text())
     assert "LOW_PREV" in skipped, f"LOW_PREV not in skipped_topics.json: {skipped}"
+
+
+def test_abstention_row_schema(tmp_path: Path) -> None:
+    """Calibrate returns abstain tuple → row written with correct dtypes and NaN fields."""
+    import sys
+    import types
+    import unittest.mock as mock
+
+    from cascade_rc.ablations.m_sensitivity import run_sweep
+
+    parquet_path = _make_synthetic_parquet(tmp_path, n=1_000, seed=3, n_calib_pos=50)
+    out_dir = tmp_path / "out"
+
+    # cascade_rc.calibration.main_calibrate has a transitive dependency on
+    # 'confseq' which may not be installed in the test environment.  Stub it
+    # out in sys.modules so that unittest.mock can import (and then patch) the
+    # module without raising ModuleNotFoundError.
+    _stub_modules: list[str] = []
+    for mod_name in ("confseq", "confseq.betting"):
+        if mod_name not in sys.modules:
+            stub = types.ModuleType(mod_name)
+            # Provide the names that wsr_lcb.py imports at module level.
+            stub.betting_lower_cs = mock.MagicMock()  # type: ignore[attr-defined]
+            stub.lambda_predmix_eb = mock.MagicMock()  # type: ignore[attr-defined]
+            sys.modules[mod_name] = stub
+            _stub_modules.append(mod_name)
+
+    try:
+        with mock.patch(
+            "cascade_rc.calibration.main_calibrate.calibrate",
+            return_value=(None, None, "test_abstain"),
+        ), mock.patch(
+            "cascade_rc.ablations.m_sensitivity._plot_topic",
+        ), mock.patch(
+            "cascade_rc.ablations.m_sensitivity._plot_overview",
+        ):
+            df = run_sweep(data_dir=tmp_path, out_dir=out_dir, seed=42)
+    finally:
+        # Clean up stubs so other tests are not affected.
+        for mod_name in _stub_modules:
+            sys.modules.pop(mod_name, None)
+        # Also evict any calibration sub-modules that were loaded via the stubs.
+        for key in list(sys.modules):
+            if "main_calibrate" in key or "wsr_lcb" in key or "surrogate_loss" in key:
+                sys.modules.pop(key, None)
+
+    assert len(df) > 0, "expected rows when calibration abstains"
+    assert df["abstention"].all(), "all rows should be abstained"
+    assert (df["wss_status"] == "abstained").all()
+    assert df["wss_95"].dtype == np.float64
+    assert df["achieved_recall"].dtype == np.float64
+    assert df["mean_eta_lcb"].dtype == np.float64
+    assert df["wss_95"].isna().all()
+    assert df["achieved_recall"].isna().all()
+    assert df["mean_eta_lcb"].isna().all()

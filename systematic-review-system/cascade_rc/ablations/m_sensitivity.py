@@ -5,11 +5,14 @@ import json
 import math
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 
-from cascade_rc.certificates.store import CertificationResult
+if TYPE_CHECKING:
+    from cascade_rc.certificates.store import CertificationResult
+
 from cascade_rc.config import CascadeRCConfig
 from cascade_rc.evaluation.metrics import wss_at_recall
 

@@ -130,6 +130,11 @@ def calibrate(
         config:         CascadeRCConfig with LTT budget and artefact paths.
         artefact_dir:   Override for config.artefact_dir.
         chunk_size:     Grid points per WSR checkpoint batch (default 500).
+        order_fn:       Optional callable that takes the (G, 3) parameter grid and
+                        returns a (G,) permutation of indices defining the LTT walk
+                        order. Defaults to safest_to_riskiest_order (Lemma 6).
+                        Custom orderings are used by cascade_rc.ablations.walk_ordering
+                        for empirical validation of Lemma 6.
 
     Returns:
         CertificationResult on success, or (None, None, reason_str) on abstention.

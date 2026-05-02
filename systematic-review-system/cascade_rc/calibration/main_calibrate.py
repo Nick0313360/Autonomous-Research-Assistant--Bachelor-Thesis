@@ -8,6 +8,7 @@ from __future__ import annotations
 import math
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -119,6 +120,7 @@ def calibrate(
     config: CascadeRCConfig,
     artefact_dir: Path | None = None,
     chunk_size: int = 500,
+    order_fn: Callable[[np.ndarray], np.ndarray] | None = None,
 ) -> "CertificationResult | tuple[None, None, str]":
     """Run Algorithm 1: certify operating point θ̂ for topic_id.
 
@@ -196,7 +198,7 @@ def calibrate(
     p_hb = hb_pvalues(R_hat, alpha_dagger, n=m_plus)   # (G,)
 
     # Step 8: Fixed-sequence walk — reject until first acceptance
-    order = safest_to_riskiest_order(theta_g)
+    order = (order_fn if order_fn is not None else safest_to_riskiest_order)(theta_g)
     lambda_hat_mask = walk_reject(p_hb, order, delta_ltt)   # (G,) bool
 
     # Step 9: θ̂ = argmin expected_cost over Λ̂

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Literal
 
@@ -23,8 +24,7 @@ class LTTBudget(BaseModel):
 
     @model_validator(mode="after")
     def _check_delta_split(self) -> "LTTBudget":
-        tol = 1e-9
-        if abs(self.delta_eta + self.delta_LTT - self.delta_total) > tol:
+        if not math.isclose(self.delta_eta + self.delta_LTT, self.delta_total, abs_tol=1e-9):
             raise ValueError(
                 f"delta_eta ({self.delta_eta}) + delta_LTT ({self.delta_LTT}) "
                 f"must equal delta_total ({self.delta_total})"

@@ -1,6 +1,7 @@
 """Tests for cascade_rc.evaluation.figures."""
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import matplotlib
@@ -94,7 +95,7 @@ def test_loaders_use_real_autostop_parquet(tmp_path: Path) -> None:
     assert float(autostop_rows.iloc[0]["alpha"]) == pytest.approx(0.05)
 
 
-from cascade_rc.evaluation.figures import plot_figure1, plot_figure2, plot_figure3
+from cascade_rc.evaluation.figures import main, plot_figure1, plot_figure2, plot_figure3
 
 
 def test_plot_figure1_creates_pdf_and_png(tmp_path: Path) -> None:
@@ -119,3 +120,32 @@ def test_plot_figure3_creates_pdf_and_png(tmp_path: Path) -> None:
     plot_figure3(df, tmp_path)
     assert (tmp_path / "figure3_escalation.pdf").exists()
     assert (tmp_path / "figure3_escalation.png").exists()
+
+
+def _md5(path: Path) -> str:
+    return hashlib.md5(path.read_bytes()).hexdigest()
+
+
+def test_main_produces_six_artefacts(tmp_path: Path) -> None:
+    main(artefact_dir=tmp_path)
+    expected_stems = [
+        "figure1_risk_validity",
+        "figure2_wss_efficiency",
+        "figure3_escalation",
+    ]
+    fig_dir = tmp_path / "figures"
+    for stem in expected_stems:
+        assert (fig_dir / f"{stem}.pdf").exists(), f"{stem}.pdf missing"
+        assert (fig_dir / f"{stem}.png").exists(), f"{stem}.png missing"
+
+
+def test_main_is_deterministic(tmp_path: Path) -> None:
+    out1 = tmp_path / "run1"
+    out2 = tmp_path / "run2"
+    main(artefact_dir=out1)
+    main(artefact_dir=out2)
+    for stem in ["figure1_risk_validity", "figure2_wss_efficiency", "figure3_escalation"]:
+        for ext in ["png"]:  # PNG is byte-deterministic; PDF may differ in metadata
+            p1 = out1 / "figures" / f"{stem}.{ext}"
+            p2 = out2 / "figures" / f"{stem}.{ext}"
+            assert _md5(p1) == _md5(p2), f"{stem}.{ext} is not deterministic"

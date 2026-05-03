@@ -439,3 +439,38 @@ def plot_figure3(df: pd.DataFrame, out_dir: Path) -> None:
         )
         fig.tight_layout(pad=0.3)  # out-of-axes legend included by savefig.bbox="tight" in _IEEE_RC
         _save(fig, out_dir, "figure3_escalation")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main(artefact_dir: Path = Path("artefacts/cascade_rc")) -> None:
+    """Generate all three publication figures.
+
+    Reads from <artefact_dir>/baselines/ (falls back to synthetic data).
+    Writes PDF + PNG to <artefact_dir>/figures/.
+    """
+    import os
+    os.environ.setdefault("PYTHONHASHSEED", "0")
+    artefact_dir = Path(artefact_dir)
+    out_dir = artefact_dir / "figures"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    plot_figure1(_load_fig1_data(artefact_dir), out_dir)
+    plot_figure2(_load_fig2_data(artefact_dir), out_dir)
+    plot_figure3(_load_fig3_data(artefact_dir), out_dir)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--artefact-dir",
+        type=Path,
+        default=Path("artefacts/cascade_rc"),
+        help="Root artefact directory (default: artefacts/cascade_rc)",
+    )
+    args = parser.parse_args()
+    main(artefact_dir=args.artefact_dir)

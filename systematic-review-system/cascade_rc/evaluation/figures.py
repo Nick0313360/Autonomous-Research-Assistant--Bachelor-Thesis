@@ -7,15 +7,10 @@ Run:
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
-from typing import Optional
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -52,6 +47,7 @@ _ROUTING_COLORS = ["#aec7e8", "#98df8a", "#ffbb78", "#ff9896"]
 
 _PDF_META: dict[str, str] = {
     "Creator":      "cascade_rc.evaluation.figures",
+    # blank fields suppress timestamp metadata so PDF bytes are reproducible
     "Title":        "",
     "Subject":      "",
     "Author":       "",

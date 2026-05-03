@@ -24,7 +24,7 @@ class LTTBudget(BaseModel):
 
     @model_validator(mode="after")
     def _check_delta_split(self) -> "LTTBudget":
-        if not math.isclose(self.delta_eta + self.delta_LTT, self.delta_total, abs_tol=1e-9):
+        if not math.isclose(self.delta_eta + self.delta_LTT, self.delta_total, rel_tol=0.0, abs_tol=1e-9):
             raise ValueError(
                 f"delta_eta ({self.delta_eta}) + delta_LTT ({self.delta_LTT}) "
                 f"must equal delta_total ({self.delta_total})"

@@ -1,0 +1,6 @@
+Source:   https://github.com/dli1/auto-stop-tar
+Commit:   7e72795
+License:  MIT
+Vendored: 2026-05-02
+Cite:     Li & Kanoulas, "When to Stop Reviewing in Technology-Assisted Reviews",
+          ACM TOIS 38(4):1–36, 2020. https://doi.org/10.1145/3411755

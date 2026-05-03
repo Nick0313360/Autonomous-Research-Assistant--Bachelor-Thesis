@@ -1,0 +1,14 @@
+Source:   https://github.com/ReemBinHezam/RLStop
+Commit:   a59b622
+License:  Apache-2.0
+Vendored: 2026-05-02
+Cite:     Bin-Hezam & Stevenson, "RLStop: A Reinforcement Learning Stopping Method for TAR",
+          SIGIR 2024. https://doi.org/10.1145/3626772.3657837
+
+Deviations from paper:
+  - Training data: CLEF 2017 only (42 Intervention topics, vendor-provided rankings).
+    CLEF 2018 not shipped with the vendor repo; per-family training protocol (paper §4)
+    cannot be replicated without CLEF 2018 family labels.
+  - One model per target_recall (4 total) trained cross-family and applied to all
+    6 CLEF-TAR 2019 test topics. Paper trains per-family; not reproducible here.
+  - n_steps=100 per vendor notebook (paper §4 states batch=100; vendor confirms).

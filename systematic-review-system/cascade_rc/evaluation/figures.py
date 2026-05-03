@@ -7,6 +7,8 @@ Run:
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -153,3 +155,134 @@ def _synthetic_figure3_data(rng: np.random.Generator) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Real data loaders (fall back to synthetic)
+# ---------------------------------------------------------------------------
+
+def _normalise_method_name(raw: str) -> str:
+    _MAP = {
+        "autostop":   "AUTOSTOP",
+        "rlstop":     "RLStop",
+        "SCRC-I":     "SCRC-I",
+        "SCRC-T":     "SCRC-T",
+        "cascade_rc": "CASCADE-RC",
+        "CASCADE-RC": "CASCADE-RC",
+    }
+    return _MAP.get(raw, raw)
+
+
+def _load_fig1_data(artefact_dir: Path) -> pd.DataFrame:
+    """Load FNR-vs-alpha data; fall back to synthetic when parquets absent."""
+    rng = np.random.default_rng(SEED)
+    baseline_dir = artefact_dir / "baselines"
+    frames: list[pd.DataFrame] = []
+
+    for fname in [
+        "autostop_results.parquet",
+        "rlstop_results.parquet",
+        "scrc_results.parquet",
+    ]:
+        path = baseline_dir / fname
+        if not path.exists():
+            continue
+        raw = pd.read_parquet(path)
+        sub = pd.DataFrame(
+            {
+                "method":   raw["method"].map(_normalise_method_name),
+                "topic_id": raw["topic_id"],
+                "alpha":    1.0 - raw["target_recall"].astype(float),
+                "fnr":      1.0 - raw["recall_achieved"].astype(float),
+                "wss":      raw["wss_95"].astype(float),
+            }
+        )
+        frames.append(sub)
+
+    crc_path = baseline_dir / "cascade_rc_results.parquet"
+    if crc_path.exists():
+        raw = pd.read_parquet(crc_path)
+        sub = pd.DataFrame(
+            {
+                "method":   "CASCADE-RC",
+                "topic_id": raw["topic_id"],
+                "alpha":    raw["alpha"].astype(float),
+                "fnr":      raw["fnr"].astype(float),
+                "wss":      raw["wss_95"].astype(float),
+            }
+        )
+        frames.append(sub)
+
+    if not frames:
+        return _synthetic_figure1_data(rng)
+
+    df = pd.concat(frames, ignore_index=True)
+    synth = _synthetic_figure1_data(rng)
+    present = set(df["method"].unique())
+    missing = [m for m in METHODS if m not in present]
+    if missing:
+        df = pd.concat(
+            [df, synth[synth["method"].isin(missing)]], ignore_index=True
+        )
+    return df
+
+
+def _load_fig2_data(artefact_dir: Path) -> pd.DataFrame:
+    """Load WSS-vs-recall data; fall back to synthetic when parquets absent."""
+    rng = np.random.default_rng(SEED)
+    baseline_dir = artefact_dir / "baselines"
+    frames: list[pd.DataFrame] = []
+
+    for fname in [
+        "autostop_results.parquet",
+        "rlstop_results.parquet",
+        "scrc_results.parquet",
+    ]:
+        path = baseline_dir / fname
+        if not path.exists():
+            continue
+        raw = pd.read_parquet(path)
+        sub = pd.DataFrame(
+            {
+                "method":        raw["method"].map(_normalise_method_name),
+                "topic_id":      raw["topic_id"],
+                "target_recall": raw["target_recall"].astype(float),
+                "wss":           raw["wss_95"].astype(float),
+            }
+        )
+        frames.append(sub)
+
+    crc_path = baseline_dir / "cascade_rc_results.parquet"
+    if crc_path.exists():
+        raw = pd.read_parquet(crc_path)
+        sub = pd.DataFrame(
+            {
+                "method":        "CASCADE-RC",
+                "topic_id":      raw["topic_id"],
+                "target_recall": 1.0 - raw["alpha"].astype(float),
+                "wss":           raw["wss_95"].astype(float),
+            }
+        )
+        frames.append(sub)
+
+    if not frames:
+        return _synthetic_figure2_data(rng)
+
+    df = pd.concat(frames, ignore_index=True)
+    synth = _synthetic_figure2_data(rng)
+    present = set(df["method"].unique())
+    missing = [m for m in METHODS if m not in present]
+    if missing:
+        df = pd.concat(
+            [df, synth[synth["method"].isin(missing)]], ignore_index=True
+        )
+    return df
+
+
+def _load_fig3_data(artefact_dir: Path) -> pd.DataFrame:
+    """Load cascade routing sweep; fall back to synthetic."""
+    rng = np.random.default_rng(SEED)
+    path = artefact_dir / "baselines" / "cascade_rc_routing.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return _synthetic_figure3_data(rng)

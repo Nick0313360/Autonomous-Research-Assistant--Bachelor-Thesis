@@ -284,3 +284,140 @@ def _load_fig3_data(artefact_dir: Path) -> pd.DataFrame:
     if path.exists():
         return pd.read_parquet(path)
     return _synthetic_figure3_data(np.random.default_rng(SEED))
+
+
+# ---------------------------------------------------------------------------
+# Plot functions
+# ---------------------------------------------------------------------------
+
+def _save(fig: plt.Figure, out_dir: Path, stem: str) -> None:
+    """Save figure as PDF (fixed metadata) and PNG."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_dir / f"{stem}.pdf", format="pdf", metadata=_PDF_META)
+    fig.savefig(out_dir / f"{stem}.png", format="png")
+    plt.close(fig)
+
+
+def plot_figure1(df: pd.DataFrame, out_dir: Path) -> None:
+    """Figure 1: Risk-control validity — empirical FNR vs target alpha.
+
+    One line per method; y=x diagonal reference; shaded ±1 SE band.
+    CASCADE-RC sits on or below the diagonal (validity guarantee).
+    """
+    _apply_ieee_style()
+    fig, ax = plt.subplots(figsize=FIGSIZE)
+
+    ax.plot([0, 0.35], [0, 0.35], color="black", linewidth=0.8,
+            linestyle="--", label="y = x", zorder=1)
+
+    for method in METHODS:
+        sub = df[df["method"] == method]
+        if sub.empty:
+            continue
+        agg = (
+            sub.groupby("alpha")["fnr"]
+            .agg(mean="mean", std="std", count="count")
+            .reset_index()
+        )
+        agg["se"] = agg["std"] / np.sqrt(agg["count"].clip(lower=1))
+        agg = agg.sort_values("alpha")
+        c = _METHOD_COLORS[method]
+        m = _METHOD_MARKERS[method]
+        ax.plot(
+            agg["alpha"], agg["mean"],
+            color=c, marker=m, label=method, zorder=3,
+        )
+        ax.fill_between(
+            agg["alpha"],
+            agg["mean"] - agg["se"],
+            agg["mean"] + agg["se"],
+            color=c, alpha=0.15, zorder=2,
+        )
+
+    ax.set_xlabel(r"Target risk $\alpha$")
+    ax.set_ylabel("Empirical FNR")
+    ax.set_xlim(0.02, 0.33)
+    ax.set_ylim(0.0, 0.35)
+    ax.set_xticks(ALPHAS)
+    ax.grid(True)
+    ax.legend(loc="upper left", ncol=1, framealpha=0.7)
+    fig.tight_layout(pad=0.3)
+    _save(fig, out_dir, "figure1_risk_validity")
+
+
+def plot_figure2(df: pd.DataFrame, out_dir: Path) -> None:
+    """Figure 2: Efficiency-safety trade-off — WSS vs target recall.
+
+    One line per method; higher WSS = more work saved.
+    """
+    _apply_ieee_style()
+    fig, ax = plt.subplots(figsize=FIGSIZE)
+
+    for method in METHODS:
+        sub = df[df["method"] == method]
+        if sub.empty:
+            continue
+        agg = (
+            sub.groupby("target_recall")["wss"]
+            .agg(mean="mean", std="std", count="count")
+            .reset_index()
+        )
+        agg["se"] = agg["std"] / np.sqrt(agg["count"].clip(lower=1))
+        agg = agg.sort_values("target_recall")
+        c = _METHOD_COLORS[method]
+        m = _METHOD_MARKERS[method]
+        ax.plot(
+            agg["target_recall"], agg["mean"],
+            color=c, marker=m, label=method,
+        )
+        ax.fill_between(
+            agg["target_recall"],
+            agg["mean"] - agg["se"],
+            agg["mean"] + agg["se"],
+            color=c, alpha=0.15,
+        )
+
+    ax.set_xlabel("Target recall")
+    ax.set_ylabel("WSS@target")
+    ax.set_xlim(0.77, 1.03)
+    ax.set_ylim(0.0, 0.75)
+    ax.set_xticks(RECALLS)
+    ax.grid(True)
+    ax.legend(loc="upper right", ncol=1, framealpha=0.7)
+    fig.tight_layout(pad=0.3)
+    _save(fig, out_dir, "figure2_wss_efficiency")
+
+
+def plot_figure3(df: pd.DataFrame, out_dir: Path) -> None:
+    """Figure 3: Cascade escalation dynamics — routing fractions vs alpha.
+
+    Stacked area: cheap-reject | auto-include | LLM-self-evident | human.
+    """
+    _apply_ieee_style()
+    fig, ax = plt.subplots(figsize=FIGSIZE)
+
+    df_sorted = df.sort_values("alpha")
+    x = df_sorted["alpha"].to_numpy()
+    ys = [df_sorted[col].to_numpy() for col in _ROUTING_COLS]
+
+    ax.stackplot(
+        x, *ys,
+        labels=_ROUTING_LABELS,
+        colors=_ROUTING_COLORS,
+        alpha=0.85,
+    )
+
+    ax.set_xlabel(r"Target risk $\alpha$")
+    ax.set_ylabel("Fraction of corpus")
+    ax.set_xlim(ALPHAS[0], ALPHAS[-1])
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xticks(ALPHAS)
+    ax.grid(True, axis="y")
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.28),
+        ncol=2,
+        framealpha=0.7,
+    )
+    fig.tight_layout(pad=0.3)
+    _save(fig, out_dir, "figure3_escalation")

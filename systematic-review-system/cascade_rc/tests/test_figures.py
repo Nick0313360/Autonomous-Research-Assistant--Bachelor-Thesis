@@ -92,3 +92,30 @@ def test_loaders_use_real_autostop_parquet(tmp_path: Path) -> None:
     autostop_rows = df[df["method"] == "AUTOSTOP"]
     assert len(autostop_rows) >= 1
     assert float(autostop_rows.iloc[0]["alpha"]) == pytest.approx(0.05)
+
+
+from cascade_rc.evaluation.figures import plot_figure1, plot_figure2, plot_figure3
+
+
+def test_plot_figure1_creates_pdf_and_png(tmp_path: Path) -> None:
+    rng = np.random.default_rng(0)
+    df = _synthetic_figure1_data(rng)
+    plot_figure1(df, tmp_path)
+    assert (tmp_path / "figure1_risk_validity.pdf").exists()
+    assert (tmp_path / "figure1_risk_validity.png").exists()
+
+
+def test_plot_figure2_creates_pdf_and_png(tmp_path: Path) -> None:
+    rng = np.random.default_rng(0)
+    df = _synthetic_figure2_data(rng)
+    plot_figure2(df, tmp_path)
+    assert (tmp_path / "figure2_wss_efficiency.pdf").exists()
+    assert (tmp_path / "figure2_wss_efficiency.png").exists()
+
+
+def test_plot_figure3_creates_pdf_and_png(tmp_path: Path) -> None:
+    rng = np.random.default_rng(0)
+    df = _synthetic_figure3_data(rng)
+    plot_figure3(df, tmp_path)
+    assert (tmp_path / "figure3_escalation.pdf").exists()
+    assert (tmp_path / "figure3_escalation.png").exists()

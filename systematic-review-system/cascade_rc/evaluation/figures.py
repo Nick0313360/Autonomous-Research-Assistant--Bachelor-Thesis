@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -87,21 +88,20 @@ def _apply_ieee_style() -> None:
 # Synthetic data generators
 # ---------------------------------------------------------------------------
 
-def _synthetic_figure1_data(rng: np.random.Generator) -> "pd.DataFrame":
+def _synthetic_figure1_data(rng: np.random.Generator) -> pd.DataFrame:
     """Figure 1 synthetic: FNR vs alpha per method, CASCADE-RC below diagonal."""
-    import pandas as pd
     rows: list[dict] = []
     for method in METHODS:
         alphas = ALPHAS if method == "CASCADE-RC" else [0.05, 0.10, 0.20]
         for alpha in alphas:
             for topic in TOPICS:
                 if method == "CASCADE-RC":
-                    fnr = float(alpha * rng.uniform(0.50, 0.95))
-                    wss = float(rng.uniform(0.35, 0.65))
+                    fnr = float(alpha * rng.uniform(0.50, 0.95))  # strictly below alpha (validity guarantee)
+                    wss = float(rng.uniform(0.35, 0.65))           # CASCADE-RC WSS range
                 else:
                     noise = float(rng.normal(0.0, 0.025))
-                    fnr = float(np.clip(alpha + noise, 0.0, 1.0))
-                    wss = float(rng.uniform(0.20, 0.60))
+                    fnr = float(np.clip(alpha + noise, 0.0, 1.0))  # baselines can cross diagonal
+                    wss = float(rng.uniform(0.20, 0.60))            # baseline WSS range
                 rows.append(
                     {"method": method, "topic_id": topic,
                      "alpha": alpha, "fnr": fnr, "wss": wss}
@@ -109,19 +109,19 @@ def _synthetic_figure1_data(rng: np.random.Generator) -> "pd.DataFrame":
     return pd.DataFrame(rows)
 
 
-def _synthetic_figure2_data(rng: np.random.Generator) -> "pd.DataFrame":
+def _synthetic_figure2_data(rng: np.random.Generator) -> pd.DataFrame:
     """Figure 2 synthetic: WSS vs target_recall per method."""
-    import pandas as pd
     rows: list[dict] = []
     _wss_base = {
         "CASCADE-RC": 0.60, "AUTOSTOP": 0.50,
         "RLStop": 0.45, "SCRC-T": 0.42, "SCRC-I": 0.40,
     }
+    assert set(_wss_base) == set(METHODS), f"_wss_base keys out of sync with METHODS"
     for method in METHODS:
         base = _wss_base[method]
         for recall in RECALLS:
             for topic in TOPICS:
-                penalty = (recall - 0.80) * 0.8
+                penalty = (recall - 0.80) * 0.8  # WSS drops ~0.8 per recall unit beyond minimum
                 wss = float(np.clip(base - penalty + rng.normal(0.0, 0.03), 0.0, 1.0))
                 rows.append(
                     {"method": method, "topic_id": topic,
@@ -130,9 +130,8 @@ def _synthetic_figure2_data(rng: np.random.Generator) -> "pd.DataFrame":
     return pd.DataFrame(rows)
 
 
-def _synthetic_figure3_data(rng: np.random.Generator) -> "pd.DataFrame":
+def _synthetic_figure3_data(rng: np.random.Generator) -> pd.DataFrame:
     """Figure 3 synthetic: routing fractions vs alpha for CASCADE-RC."""
-    import pandas as pd
     rows: list[dict] = []
     for alpha in ALPHAS:
         tightness = 1.0 - (alpha / 0.30)

@@ -58,6 +58,15 @@ _PDF_META: dict[str, str] = {
     "ModDate":      "",
 }
 
+_METHOD_NAME_MAP: dict[str, str] = {
+    "autostop":   "AUTOSTOP",
+    "rlstop":     "RLStop",
+    "scrc_i":     "SCRC-I",
+    "scrc_t":     "SCRC-T",
+    "cascade_rc": "CASCADE-RC",
+    "CASCADE-RC": "CASCADE-RC",
+}
+
 
 # ---------------------------------------------------------------------------
 # Style helper
@@ -162,20 +171,11 @@ def _synthetic_figure3_data(rng: np.random.Generator) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def _normalise_method_name(raw: str) -> str:
-    _MAP = {
-        "autostop":   "AUTOSTOP",
-        "rlstop":     "RLStop",
-        "SCRC-I":     "SCRC-I",
-        "SCRC-T":     "SCRC-T",
-        "cascade_rc": "CASCADE-RC",
-        "CASCADE-RC": "CASCADE-RC",
-    }
-    return _MAP.get(raw, raw)
+    return _METHOD_NAME_MAP.get(raw, raw)
 
 
 def _load_fig1_data(artefact_dir: Path) -> pd.DataFrame:
     """Load FNR-vs-alpha data; fall back to synthetic when parquets absent."""
-    rng = np.random.default_rng(SEED)
     baseline_dir = artefact_dir / "baselines"
     frames: list[pd.DataFrame] = []
 
@@ -197,7 +197,7 @@ def _load_fig1_data(artefact_dir: Path) -> pd.DataFrame:
                 "wss":      raw["wss_95"].astype(float),
             }
         )
-        frames.append(sub)
+        frames.append(sub.dropna(subset=["wss"]))
 
     crc_path = baseline_dir / "cascade_rc_results.parquet"
     if crc_path.exists():
@@ -211,16 +211,16 @@ def _load_fig1_data(artefact_dir: Path) -> pd.DataFrame:
                 "wss":      raw["wss_95"].astype(float),
             }
         )
-        frames.append(sub)
+        frames.append(sub.dropna(subset=["wss"]))
 
     if not frames:
-        return _synthetic_figure1_data(rng)
+        return _synthetic_figure1_data(np.random.default_rng(SEED))
 
     df = pd.concat(frames, ignore_index=True)
-    synth = _synthetic_figure1_data(rng)
     present = set(df["method"].unique())
     missing = [m for m in METHODS if m not in present]
     if missing:
+        synth = _synthetic_figure1_data(np.random.default_rng(SEED))
         df = pd.concat(
             [df, synth[synth["method"].isin(missing)]], ignore_index=True
         )
@@ -229,7 +229,6 @@ def _load_fig1_data(artefact_dir: Path) -> pd.DataFrame:
 
 def _load_fig2_data(artefact_dir: Path) -> pd.DataFrame:
     """Load WSS-vs-recall data; fall back to synthetic when parquets absent."""
-    rng = np.random.default_rng(SEED)
     baseline_dir = artefact_dir / "baselines"
     frames: list[pd.DataFrame] = []
 
@@ -250,7 +249,7 @@ def _load_fig2_data(artefact_dir: Path) -> pd.DataFrame:
                 "wss":           raw["wss_95"].astype(float),
             }
         )
-        frames.append(sub)
+        frames.append(sub.dropna(subset=["wss"]))
 
     crc_path = baseline_dir / "cascade_rc_results.parquet"
     if crc_path.exists():
@@ -263,16 +262,16 @@ def _load_fig2_data(artefact_dir: Path) -> pd.DataFrame:
                 "wss":           raw["wss_95"].astype(float),
             }
         )
-        frames.append(sub)
+        frames.append(sub.dropna(subset=["wss"]))
 
     if not frames:
-        return _synthetic_figure2_data(rng)
+        return _synthetic_figure2_data(np.random.default_rng(SEED))
 
     df = pd.concat(frames, ignore_index=True)
-    synth = _synthetic_figure2_data(rng)
     present = set(df["method"].unique())
     missing = [m for m in METHODS if m not in present]
     if missing:
+        synth = _synthetic_figure2_data(np.random.default_rng(SEED))
         df = pd.concat(
             [df, synth[synth["method"].isin(missing)]], ignore_index=True
         )
@@ -281,8 +280,7 @@ def _load_fig2_data(artefact_dir: Path) -> pd.DataFrame:
 
 def _load_fig3_data(artefact_dir: Path) -> pd.DataFrame:
     """Load cascade routing sweep; fall back to synthetic."""
-    rng = np.random.default_rng(SEED)
     path = artefact_dir / "baselines" / "cascade_rc_routing.parquet"
     if path.exists():
         return pd.read_parquet(path)
-    return _synthetic_figure3_data(rng)
+    return _synthetic_figure3_data(np.random.default_rng(SEED))

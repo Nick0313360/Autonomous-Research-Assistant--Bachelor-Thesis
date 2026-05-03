@@ -1,15 +1,21 @@
 """Tests for cascade_rc.evaluation.figures."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import pytest
 
 from cascade_rc.evaluation.figures import (
     _apply_ieee_style,
+    _load_fig1_data,
+    _load_fig2_data,
+    _load_fig3_data,
     _synthetic_figure1_data,
     _synthetic_figure2_data,
     _synthetic_figure3_data,
@@ -59,3 +65,30 @@ def test_synthetic_fig3_fractions_sum_to_one() -> None:
     df = _synthetic_figure3_data(rng)
     totals = df[["cheap_reject", "auto_include", "llm", "human"]].sum(axis=1)
     np.testing.assert_allclose(totals.values, 1.0, atol=1e-9)
+
+
+def test_loaders_fall_back_to_synthetic_when_no_parquets(tmp_path: Path) -> None:
+    df1 = _load_fig1_data(tmp_path)
+    assert set(df1["method"].unique()) == set(METHODS)
+
+    df2 = _load_fig2_data(tmp_path)
+    assert set(df2["method"].unique()) == set(METHODS)
+
+    df3 = _load_fig3_data(tmp_path)
+    assert set(df3["alpha"].unique()) == set(ALPHAS)
+
+
+def test_loaders_use_real_autostop_parquet(tmp_path: Path) -> None:
+    baseline_dir = tmp_path / "baselines"
+    baseline_dir.mkdir()
+    rows = [
+        {"method": "autostop", "topic_id": "CD008874",
+         "target_recall": 0.95, "examined": 100,
+         "recall_achieved": 0.97, "wss_95": 0.42,
+         "wss_status": "ok", "peak_rss_kb": float("nan")}
+    ]
+    pd.DataFrame(rows).to_parquet(baseline_dir / "autostop_results.parquet", index=False)
+    df = _load_fig1_data(tmp_path)
+    autostop_rows = df[df["method"] == "AUTOSTOP"]
+    assert len(autostop_rows) >= 1
+    assert float(autostop_rows.iloc[0]["alpha"]) == pytest.approx(0.05)

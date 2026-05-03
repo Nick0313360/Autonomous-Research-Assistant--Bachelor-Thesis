@@ -139,7 +139,8 @@ def test_main_produces_six_artefacts(tmp_path: Path) -> None:
         assert (fig_dir / f"{stem}.png").exists(), f"{stem}.png missing"
 
 
-def test_main_is_deterministic(tmp_path: Path) -> None:
+def test_main_is_deterministic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PYTHONHASHSEED", "0")
     out1 = tmp_path / "run1"
     out2 = tmp_path / "run2"
     main(artefact_dir=out1)

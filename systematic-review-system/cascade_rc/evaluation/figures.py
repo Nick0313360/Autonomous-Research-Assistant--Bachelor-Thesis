@@ -103,6 +103,7 @@ def _synthetic_figure1_data(rng: np.random.Generator) -> pd.DataFrame:
     """Figure 1 synthetic: FNR vs alpha per method, CASCADE-RC below diagonal."""
     rows: list[dict] = []
     for method in METHODS:
+        # baselines run at target_recall ∈ {0.80,0.90,0.95} → α ∈ {0.20,0.10,0.05}
         alphas = ALPHAS if method == "CASCADE-RC" else [0.05, 0.10, 0.20]
         for alpha in alphas:
             for topic in TOPICS:

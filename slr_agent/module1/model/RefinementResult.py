@@ -1,6 +1,6 @@
 from typing import List
-from model.TermDecision import TermDecision
 from pydantic import BaseModel
+from module1.model.TermDecision import TermDecision
 
 class RefinementResult(BaseModel):
     iteration: int = 0

@@ -1,9 +1,8 @@
 import logging
-from dataclasses import dataclass
-from typing import List, Tuple
-
 from rapidfuzz import fuzz
-from model.Paper import Paper
+from typing import List, Tuple
+from dataclasses import dataclass
+from module1.model.Paper import Paper
 
 logger = logging.getLogger(__name__)
 

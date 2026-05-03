@@ -1,5 +1,5 @@
 from typing import List
-from model.SearchQuery import SearchQuery
+from module1.model.SearchQuery import SearchQuery
 
 class QueryBuilder:
     def __init__(self):

@@ -1,0 +1,8 @@
+Source:   https://github.com/CLEF-TAR/tar
+Path:     scripts/tar_eval.py + scripts/measures/eval_measures.py + scripts/measures/tar_rulers.py
+          + scripts/seeker/__init__.py + scripts/seeker/common_helpers.py
+          + scripts/seeker/topic_document_file_handler.py + scripts/seeker/trec_qrel_handler.py
+          + scripts/seeker/trec_result_handler.py
+Commit:   dbc13d02bb3e2f8ebc90e62ff47f5eb591e5ca20
+License:  BSD-3-Clause (see LICENSE in source repo)
+Vendored: 2026-05-01

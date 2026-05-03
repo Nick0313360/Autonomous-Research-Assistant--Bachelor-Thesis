@@ -1,19 +1,19 @@
-from connector.BaseConnector import BaseConnector
-from services.DeduplicationService import DeduplicationService
-from services.LLMRefinerService import LLMRefinerService
-from model.SearchQuery import SearchQuery
-from connector.QueryBuilder import QueryBuilder
-from model.Paper import Paper
-from model.SearchRun import SearchRun
-from connector import PubMedConnector, SemanticScholarConnector
+from module1.connector.BaseConnector import BaseConnector
+from module1.services.DeduplicationService import DeduplicationService
+from module1.services.LLMRefinerService import LLMRefinerService
+from module1.model.SearchQuery import SearchQuery
+from module1.connector.QueryBuilder import QueryBuilder
+from module1.model.Paper import Paper
+from module1.model.SearchRun import SearchRun
+from module1.connector import PubMedConnector, SemanticScholarConnector
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
-from data.PrismaLog import PrismaLog
-from model.SearchIteration import SearchIteration
+from module1.data.PrismaLog import PrismaLog
+from module1.model.SearchIteration import SearchIteration
 import logging
 from typing import List, Set
 from concurrent.futures import ThreadPoolExecutor
-from connector.PubMedConnector import PubMedConnector
-from connector.SemanticScholarConnector import SemanticScholarConnector
+from module1.connector.PubMedConnector import PubMedConnector
+from module1.connector.SemanticScholarConnector import SemanticScholarConnector
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,16 @@
+You are checking a single eligibility criterion against study text.
+Respond with valid JSON only.
+Cite exact text spans from the provided evidence.
+
+PICO:
+{pico_text}
+
+Criterion:
+{criterion_text}
+
+Evidence from study:
+{context_text}
+
+Does this study satisfy the criterion?
+
+{"satisfies": true | false, "confidence": 0.0-1.0, "evidence_span": "exact verbatim quote from above text, or empty string", "reasoning": "one sentence"}

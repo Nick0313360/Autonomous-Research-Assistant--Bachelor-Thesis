@@ -2,8 +2,8 @@ import time
 import logging
 import requests
 from typing import List, Optional
-from connector.BaseConnector import BaseConnector
-from model.Paper import Paper
+from module1.connector.BaseConnector import BaseConnector
+from module1.model.Paper import Paper
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ class SemanticScholarConnector(BaseConnector):
 
 # ─────────────────────────────────────────────────────────────
 # DELETE BEFORE PRODUCTION — quick smoke test
-# run: python -m module1.connectors.SemanticScholarConnector
+# run: python -m module1.connector.SemanticScholarConnector
 # ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

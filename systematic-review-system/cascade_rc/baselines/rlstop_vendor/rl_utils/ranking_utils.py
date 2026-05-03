@@ -10,14 +10,23 @@ from scipy.optimize import curve_fit
 import random
 import glob
 import subprocess
-import matplotlib.pyplot as plt
-from scipy.integrate import simps
+try:
+    import matplotlib.pyplot as plt  # optional — only used by plotting helpers
+except ImportError:
+    plt = None  # type: ignore[assignment]
+try:
+    from scipy.integrate import simps  # scipy < 1.12
+except ImportError:
+    from scipy.integrate import simpson as simps  # scipy >= 1.12 (simps renamed)
 from scipy.stats import norm
 import os
 
 import scipy
 
-import seaborn as sns
+try:
+    import seaborn as sns  # optional — only used by plotting helpers
+except ImportError:
+    sns = None  # type: ignore[assignment]
 
 
 

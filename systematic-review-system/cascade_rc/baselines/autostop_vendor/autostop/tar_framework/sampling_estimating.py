@@ -18,7 +18,7 @@ class HorvitzThompson(object):
     """
     def __init__(self):
         self.N = 0
-        self.dtype = np.float128
+        self.dtype = np.float64
         self.complete_dids = None
         self.complete_labels = None
         self.cumulated_prod_1st_order = None
@@ -199,7 +199,7 @@ class HTPowerLawSampler(HorvitzThompson):
     def init(self, beta, complete_dids, complete_labels):
         super(HTPowerLawSampler, self).init(complete_dids, complete_labels)
         if beta <= -4.0:
-            self.dtype = np.float128
+            self.dtype = np.float64
         else:
             self.dtype = np.float64
 

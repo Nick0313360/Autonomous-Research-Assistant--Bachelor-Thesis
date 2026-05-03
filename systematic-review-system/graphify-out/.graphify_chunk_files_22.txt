@@ -1,0 +1,2 @@
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/docs/superpowers/specs/2026-05-03-scrc-design.md
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/docs/superpowers/specs/2026-05-01-m-sensitivity-design.md

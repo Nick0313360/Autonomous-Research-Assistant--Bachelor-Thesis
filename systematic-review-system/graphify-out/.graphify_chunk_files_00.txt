@@ -1,0 +1,22 @@
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/requirements.txt
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/README.md
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/CLAUDE.md
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/cascade_rc/CHANGELOG.md
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/cascade_rc/baselines/rlstop_vendor/data/qrels/CLEF2017_qrels.txt
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/config/prompts/abstract_screening.txt
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/config/prompts/data_extraction.txt
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/config/prompts/criterion_check.txt
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/config/prompts/nos_domain.txt
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/config/prompts/pico_extraction.txt
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/config/prompts/quality_assessment.txt
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/config/prompts/rob2_domain.txt
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/data/clef_tar/2019-TAR/CLEF 2019 Technology Assisted Reviews in Empirical Medicine Overview.pdf
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/data/clef_tar/2019-TAR/Task1/README.md
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/data/clef_tar/2019-TAR/Task2/README.md
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/data/clef_tar/2019-TAR/participant-runs/Runs/University of Padua/readme.txt
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/data/clef_tar/2019-TAR/participant-runs/Runs/University of Sheffield/run_description.txt
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/data/reports/review_report.md
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/data/reports/prisma_flow.md
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/data/reports/my_review/review_report.md
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/data/reports/my_review/prisma_flow.md
+/Users/nikitagolovanov/Documents/GitHub/Autonomous-Research-Assistant--Bachelor-Thesis/systematic-review-system/data/reviews/ai_in_education_systematic_review/documents/001cdb93-cf8b-4af2-b57d-7f44b47deb67/fulltext.pdf

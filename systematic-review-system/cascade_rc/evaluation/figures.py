@@ -7,6 +7,8 @@ Run:
 """
 from __future__ import annotations
 
+import os
+import warnings
 from pathlib import Path
 
 import matplotlib
@@ -49,13 +51,11 @@ _ROUTING_COLS   = ["cheap_reject", "auto_include", "llm", "human"]
 _ROUTING_COLORS = ["#aec7e8", "#98df8a", "#ffbb78", "#ff9896"]
 
 _PDF_META: dict[str, str] = {
-    "Creator":      "cascade_rc.evaluation.figures",
-    # blank fields suppress timestamp metadata so PDF bytes are reproducible
-    "Title":        "",
-    "Subject":      "",
-    "Author":       "",
-    "CreationDate": "",
-    "ModDate":      "",
+    "Creator": "cascade_rc.evaluation.figures",
+    "Title":   "",
+    "Subject": "",
+    "Author":  "",
+    # CreationDate/ModDate omitted — supplying empty strings causes UserWarning
 }
 
 _METHOD_NAME_MAP: dict[str, str] = {
@@ -92,25 +92,7 @@ _IEEE_RC: dict[str, object] = {
 
 def _apply_ieee_style() -> None:
     """Apply IEEEtran-friendly matplotlib style in-place."""
-    plt.rcParams.update(
-        {
-            "font.family":        "serif",
-            "font.size":          8,
-            "axes.titlesize":     8,
-            "axes.labelsize":     8,
-            "xtick.labelsize":    7,
-            "ytick.labelsize":    7,
-            "legend.fontsize":    6,
-            "lines.linewidth":    1.0,
-            "lines.markersize":   3.5,
-            "axes.linewidth":     0.6,
-            "grid.linewidth":     0.4,
-            "grid.alpha":         0.4,
-            "figure.dpi":         150,
-            "savefig.bbox":       "tight",
-            "savefig.pad_inches": 0.01,
-        }
-    )
+    plt.rcParams.update(_IEEE_RC)
 
 
 # ---------------------------------------------------------------------------
@@ -451,8 +433,13 @@ def main(artefact_dir: Path = Path("artefacts/cascade_rc")) -> None:
     Reads from <artefact_dir>/baselines/ (falls back to synthetic data).
     Writes PDF + PNG to <artefact_dir>/figures/.
     """
-    import os
-    os.environ.setdefault("PYTHONHASHSEED", "0")
+    if os.environ.get("PYTHONHASHSEED") != "0":
+        warnings.warn(
+            "PYTHONHASHSEED is not '0'; figure byte-reproducibility is not guaranteed. "
+            "Re-run as: PYTHONHASHSEED=0 python -m cascade_rc.evaluation.figures",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     artefact_dir = Path(artefact_dir)
     out_dir = artefact_dir / "figures"
     out_dir.mkdir(parents=True, exist_ok=True)

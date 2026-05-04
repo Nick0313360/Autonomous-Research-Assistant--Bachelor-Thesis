@@ -1,0 +1,40 @@
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  app:
+    build:
+      target: production
+    environment:
+      NODE_ENV: production
+    volumes: []                          # Remove bind mounts
+    ports:
+      - "3000:3000"                      # Remove debug ports
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.app.rule=Host(`${APP_DOMAIN}`)"
+      - "traefik.http.routers.app.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.app.middlewares=rate-limit"
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first              # Zero-downtime rolling update
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  db:
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt      # Or use external secrets manager

@@ -1,0 +1,13 @@
+{
+  "autoFix": false,
+  "checkServices": true,
+  "checkBuild": false,
+  "checkSecurity": true,
+  "checkNetwork": true,
+  "checkPerformance": false,
+  "generateOnboarding": false,
+  "skipPorts": [],
+  "customChecks": [],
+  "proxy": null,
+  "trustedCACert": null
+}

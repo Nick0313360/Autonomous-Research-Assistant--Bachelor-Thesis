@@ -1,0 +1,43 @@
+## Docker Configuration Generated
+
+### Files Created
+- `Dockerfile` - multi-stage <stack> build (<base-image>)
+  - Targets: development, test, production
+  - Security: non-root user, no-new-privileges, read-only FS ready
+  - Init process: tini for signal handling
+- `docker-compose.yml` - app + <services>
+  - Profiles: dev, test, monitoring, proxy, migrate, backup
+  - Networks: app-network, monitoring
+  - Healthchecks on all services
+- `docker-compose.prod.yml` - production overrides
+- `.dockerignore` - <N> patterns (whitelist approach)
+- `docker/` - supporting configs (postgres, prometheus, grafana, otel)
+
+### Quick Start
+```bash
+docker compose up -d                        # Start app + dependencies
+docker compose logs -f app                  # Watch app logs
+docker compose --profile monitoring up -d   # Add monitoring stack
+docker compose --profile proxy up -d        # Add reverse proxy
+docker compose --profile migrate run migrate # Run DB migrations
+docker compose down -v                      # Stop all, remove volumes
+```
+
+### Production Deploy
+```bash
+docker build --target production -t app:prod .
+docker scout cves app:prod                  # Scan for vulnerabilities
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+### Multi-Platform Build
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -t app:latest --push .
+```
+
+### Notes
+- Update secrets in `secrets/` directory (never commit these)
+- Database data persists in named volume `db_data`
+- Monitoring dashboards auto-provisioned from `docker/grafana/dashboards/`
+- Traefik auto-discovers services via Docker labels
+- Image scanned for CVEs -- review results before deploying

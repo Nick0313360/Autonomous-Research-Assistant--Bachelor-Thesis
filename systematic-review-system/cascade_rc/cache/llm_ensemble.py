@@ -172,10 +172,9 @@ async def screen_abstract_ensemble(
     prompt_sha = hashlib.sha256(prompt.encode()).hexdigest()
 
     use_cache = _cache is not None and pmid is not None
-    votes: list[Vote] = []
 
-    for b in range(n_calls):
-        cached = None
+    async def _one_slot(b: int) -> Vote:
+        """Fetch or compute a single ensemble vote. Writes to cache immediately."""
         if use_cache:
             cached = _cache.get(
                 model_id=_model_id,
@@ -185,36 +184,37 @@ async def screen_abstract_ensemble(
                 seed_b=b,
                 template_v=_template_v,
             )
+            if cached is not None:
+                logger.info("cache_hit pmid=%s slot=%d", pmid, b)
+                return cached["vote_label"]  # type: ignore[return-value]
 
-        if cached is not None:
-            vote: Vote = cached["vote_label"]  # type: ignore[assignment]
-            logger.info("cache_hit pmid=%s slot=%d", pmid, b)
-        else:
-            response = await client.complete(
-                prompt=prompt,
-                system=_SYSTEM,
-                model=_model_id,
+        response = await client.complete(
+            prompt=prompt,
+            system=_SYSTEM,
+            model=_model_id,
+            temperature=temperature,
+            max_tokens=128,
+            response_format="json",
+        )
+        v: Vote = _parse_vote(response.parsed_json)
+        if use_cache:
+            _cache.put(
+                model_id=_model_id,
+                prompt_sha=prompt_sha,
+                pmid=pmid,
                 temperature=temperature,
-                max_tokens=128,
-                response_format="json",
+                seed_b=b,
+                template_v=_template_v,
+                response=response.parsed_json or {},
+                verdict=_vote_to_int(v),
+                vote_label=v,
             )
-            vote = _parse_vote(response.parsed_json)
-            if use_cache:
-                _cache.put(
-                    model_id=_model_id,
-                    prompt_sha=prompt_sha,
-                    pmid=pmid,
-                    temperature=temperature,
-                    seed_b=b,
-                    template_v=_template_v,
-                    response=response.parsed_json or {},
-                    verdict=_vote_to_int(vote),
-                    vote_label=vote,
-                )
-            if use_cache:
-                logger.info("cache_miss pmid=%s slot=%d vote=%s", pmid, b, vote)
+            logger.info("cache_miss pmid=%s slot=%d vote=%s", pmid, b, v)
+        return v
 
-        votes.append(vote)
+    # All B slots run concurrently — each writes to cache as soon as it returns,
+    # so crash-resumability is identical to the former sequential loop.
+    votes: list[Vote] = list(await asyncio.gather(*[_one_slot(b) for b in range(n_calls)]))
 
     majority, u, y_hat = _majority_and_u(votes, n_calls)
     logger.debug("Ensemble: votes=%s majority=%s u=%.3f", votes, majority, u)
@@ -261,10 +261,31 @@ if __name__ == "__main__":  # pragma: no cover
     _ap.add_argument("--ncbi-email", default="", help="Email for NCBI API (required by NCBI ToS)")
     _ap.add_argument("--max-failures", type=int, default=10,
                      help="Abort after N consecutive PMID failures (default 10)")
+    _ap.add_argument("--concurrency", type=int, default=4,
+                     help="Max parallel LLM requests in flight (default 4). "
+                          "Higher values reduce wall-clock time at the cost of "
+                          "increased API rate-limit pressure.")
     _ap.add_argument("--resume-from-pmid", default=None,
                      help="Skip PMIDs before this one in the candidate list")
     _ap.add_argument("--dry-run", action="store_true",
                      help="Report cache hit rate without making LLM calls, then exit")
+    _ap.add_argument(
+        "--parquet", type=_Path, default=None,
+        help=(
+            "Path to topic parquet with pmid, title, abstract columns. "
+            "When supplied, uses parquet abstracts as the abstract source instead of "
+            "fetching from PubMed.  Covers PMIDs whose MEDLINE records lack abstracts "
+            "(common for pre-2000 diagnostic accuracy studies in CLEF-TAR)."
+        ),
+    )
+    _ap.add_argument(
+        "--protocol", type=_Path, default=None,
+        help=(
+            "Path to the review protocol JSON (e.g. CD008874_protocol.json). "
+            "Used to populate the PICO fields in the screening prompt. "
+            "If omitted the script searches for <topic>_protocol.json in CWD."
+        ),
+    )
     _args = _ap.parse_args()
 
     _cfg = _Cfg()
@@ -273,15 +294,40 @@ if __name__ == "__main__":  # pragma: no cover
     if not _ncbi_email:
         _driver_log.warning("No NCBI email provided; NCBI may throttle requests.")
 
-    # Download CLEF-TAR data if not cached
-    if not (_TAR_DIR / "2019-TAR").exists():
-        _driver_log.info("Downloading CLEF-TAR data to %s …", _TAR_DIR)
-        _download(_TAR_DIR)
+    if _args.parquet is not None:
+        # --parquet mode: use abstracts already present in the topic parquet.
+        # This covers the large fraction of older papers that have no live
+        # PubMed abstract but DO have abstracts in the CLEF-TAR zip files.
+        import pandas as _pd
+        _pq = _pd.read_parquet(_args.parquet)
+        _pmids: list[str] = [str(p) for p in _pq["pmid"].tolist()]
+        _abstracts: dict = {
+            str(row["pmid"]): {
+                "title":    str(row.get("title")    or ""),
+                "abstract": str(row.get("abstract") or ""),
+            }
+            for _, row in _pq.iterrows()
+            if row.get("abstract")
+        }
+        _driver_log.info(
+            "--parquet mode: %d / %d PMIDs have abstracts in %s",
+            len(_abstracts), len(_pmids), _args.parquet,
+        )
+    else:
+        # Default mode: load candidate PMIDs from CLEF-TAR, fetch abstracts via PubMed.
+        if not (_TAR_DIR / "2019-TAR").exists():
+            _driver_log.info("Downloading CLEF-TAR data to %s …", _TAR_DIR)
+            _download(_TAR_DIR)
 
-    _topic = _load_topic(_args.topic, _TAR_DIR)
-    _pmids: list[str] = _topic.candidate_pmids
+        _topic = _load_topic(_args.topic, _TAR_DIR)
+        _pmids = _topic.candidate_pmids
 
-    # Apply --resume-from-pmid
+        _driver_log.info("Fetching abstracts for %d PMIDs …", len(_pmids))
+        _abstracts = asyncio.run(
+            _fetch(_pmids, email=_ncbi_email, api_key=_cfg.ncbi_api_key)
+        )
+
+    # Apply --resume-from-pmid (works for both parquet and CLEF-TAR modes)
     if _args.resume_from_pmid is not None:
         try:
             _resume_idx = _pmids.index(_args.resume_from_pmid)
@@ -291,15 +337,9 @@ if __name__ == "__main__":  # pragma: no cover
             )
         except ValueError:
             _driver_log.error(
-                "--resume-from-pmid %s not found in topic candidate list", _args.resume_from_pmid
+                "--resume-from-pmid %s not found in PMID list", _args.resume_from_pmid
             )
             sys.exit(1)
-
-    # Fetch abstracts via PubMed (per-PMID JSON cache in artefacts/)
-    _driver_log.info("Fetching abstracts for %d PMIDs …", len(_pmids))
-    _abstracts: dict = asyncio.run(
-        _fetch(_pmids, email=_ncbi_email, api_key=_cfg.ncbi_api_key)
-    )
 
     _valid_pmids = [
         p for p in _pmids
@@ -310,9 +350,38 @@ if __name__ == "__main__":  # pragma: no cover
         _driver_log.warning("Skipping %d PMIDs with no abstract", _skipped)
 
     _cache = _Cache(_cache_path)
+
+    # Load PICO from protocol JSON so the LLM knows what the review is about.
+    # Resolution order: --protocol flag → <topic>_protocol.json in CWD → empty fallback.
     _pico: dict = {
         "population": "", "intervention": "", "comparator": "", "outcome": "", "study_design": ""
     }
+    _protocol_path: _Path | None = _args.protocol or _Path(f"{_args.topic}_protocol.json")
+    if _protocol_path is not None and _protocol_path.exists():
+        try:
+            _protocol_data = json.loads(_protocol_path.read_text())
+            _pico_raw = _protocol_data.get("pico", {})
+            _pico = {
+                "population":   str(_pico_raw.get("population",   "") or ""),
+                "intervention": str(_pico_raw.get("intervention", "") or ""),
+                "comparator":   str(_pico_raw.get("comparator",   "") or ""),
+                "outcome":      str(_pico_raw.get("outcome",      "") or ""),
+                "study_design": str(_pico_raw.get("study_design", "") or ""),
+            }
+            _driver_log.info(
+                "Loaded PICO from %s: population=%r … outcome=%r",
+                _protocol_path,
+                _pico["population"][:60],
+                _pico["outcome"][:60],
+            )
+        except Exception as _exc:
+            _driver_log.warning("Could not parse protocol JSON %s: %s — using empty PICO", _protocol_path, _exc)
+    else:
+        _driver_log.warning(
+            "No protocol JSON found (tried %s) — screening prompt will have empty PICO fields. "
+            "Pass --protocol <path> to fix this.",
+            _protocol_path,
+        )
 
     # --dry-run: report cache completeness per PMID, exit without LLM calls
     if _args.dry_run:
@@ -351,45 +420,77 @@ if __name__ == "__main__":  # pragma: no cover
         _cache.close()
         sys.exit(0)
 
-    # Main loop
+    # Main loop — concurrent via asyncio semaphore
+    # Each PMID's 5 slots remain sequential (crash-resumable), but up to
+    # --concurrency PMIDs run in parallel, overlapping their network waits.
     _client = LLMClient()
-    _failure_count = 0
+    _concurrency = max(1, _args.concurrency)
 
-    for _pmid in _tqdm(_valid_pmids, desc=f"Ensemble {_args.topic}"):
-        _rec = _abstracts[_pmid]
-        try:
-            asyncio.run(
-                screen_abstract_ensemble(
-                    title=str(_rec.get("title", "")),
-                    abstract=str(_rec.get("abstract", "")),
-                    pico=_pico,
-                    pmid=_pmid,
-                    n_calls=_args.B,
-                    temperature=_args.T,
-                    _client=_client,
-                    _cache=_cache,
-                    _model_id=LLMClient.GPT_MODEL,
-                    _template_v=_args.template_v,
-                )
-            )
-            _failure_count = 0
-        except sqlite3.Error as exc:
-            _driver_log.error("PMID %s: structural cache error — aborting: %s", _pmid, exc)
-            _cache.close()
-            sys.exit(2)
-        except Exception as exc:  # noqa: BLE001
-            _failure_count += 1
-            _driver_log.warning(
-                "PMID %s: transient failure %d/%d: %s",
-                _pmid, _failure_count, _args.max_failures, exc,
-            )
-            if _failure_count >= _args.max_failures:
+    async def _run_all() -> bool:
+        """
+        Process all valid PMIDs with bounded concurrency.
+        Returns True on clean completion, False on fatal error.
+        """
+        _sem = asyncio.Semaphore(_concurrency)
+        _failure_count = 0
+        _abort = False
+        _pbar = _tqdm(_valid_pmids, desc=f"Ensemble {_args.topic}", unit="pmid")
+
+        async def _one(pmid: str) -> tuple[str, BaseException | None]:
+            async with _sem:
+                rec = _abstracts[pmid]
+                try:
+                    await screen_abstract_ensemble(
+                        title=str(rec.get("title", "")),
+                        abstract=str(rec.get("abstract", "")),
+                        pico=_pico,
+                        pmid=pmid,
+                        n_calls=_args.B,
+                        temperature=_args.T,
+                        _client=_client,
+                        _cache=_cache,
+                        _model_id=LLMClient.GPT_MODEL,
+                        _template_v=_args.template_v,
+                    )
+                    return (pmid, None)
+                except BaseException as exc:  # noqa: BLE001
+                    return (pmid, exc)
+
+        tasks = [asyncio.create_task(_one(p)) for p in _valid_pmids]
+        for coro in asyncio.as_completed(tasks):
+            pmid, exc = await coro
+            _pbar.update(1)
+            if exc is None:
+                _failure_count = 0
+            elif isinstance(exc, sqlite3.Error):
                 _driver_log.error(
-                    "Aborting: %d consecutive failures exceeded --max-failures=%d",
-                    _failure_count, _args.max_failures,
+                    "PMID %s: structural cache error — aborting: %s", pmid, exc
                 )
-                _cache.close()
-                sys.exit(1)
+                _abort = True
+                break
+            else:
+                _failure_count += 1
+                _driver_log.warning(
+                    "PMID %s: transient failure %d/%d: %s",
+                    pmid, _failure_count, _args.max_failures, exc,
+                )
+                if _failure_count >= _args.max_failures:
+                    _driver_log.error(
+                        "Aborting: %d consecutive failures exceeded --max-failures=%d",
+                        _failure_count, _args.max_failures,
+                    )
+                    _abort = True
+                    break
 
+        _pbar.close()
+        # Cancel any tasks still running after an abort
+        if _abort:
+            for t in tasks:
+                t.cancel()
+        return not _abort
+
+    _ok = asyncio.run(_run_all())
     print(json.dumps(_cache.stats(), indent=2))
     _cache.close()
+    if not _ok:
+        sys.exit(1)

@@ -1,0 +1,62 @@
+{
+  "title": "Efficacy of Smartphone-Based Mindfulness Applications for Anxiety Reduction in Adolescents",
+  "research_question": "Do unguided smartphone-based mindfulness and meditation applications reduce anxiety symptoms compared to standard care or inactive digital controls in adolescents?",
+  "pico": {
+    "population": "adolescents (ages 12 to 18 years) exhibiting mild to moderate anxiety symptoms, generalized anxiety, or elevated stress levels",
+    "intervention": "unguided, smartphone-based digital health interventions focusing on mindfulness, meditation, or cognitive behavioral therapy (CBT) principles",
+    "comparator": "waitlist control, treatment as usual (TAU), or inactive digital controls (e.g., educational apps, passive tracking apps)",
+    "outcome": "reduction in anxiety symptoms measured by validated psychological scales (e.g., GAD-7, SCAS), user adherence rates, and self-reported well-being",
+    "study_design": "randomized controlled trials (RCTs) and quasi-experimental study designs"
+  },
+  "inclusion_criteria": [
+    {
+      "criterion_id": "IC-01",
+      "text": "Study must focus on adolescent populations strictly between the ages of 12 and 18.",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-02",
+      "text": "Intervention must be delivered primarily via a mobile application (smartphone or tablet) without mandatory real-time human therapist interaction.",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-03",
+      "text": "Study must report quantitative changes in anxiety or stress using validated psychological measurement tools.",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-04",
+      "text": "Study must include a distinct control or comparison group (waitlist, standard care, or placebo app).",
+      "type": "MANDATORY"
+    }
+  ],
+  "exclusion_criteria": [
+    {
+      "criterion_id": "EC-01",
+      "text": "Studies evaluating in-person therapy, telehealth video sessions, or web-based interventions requiring a desktop computer.",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "EC-02",
+      "text": "Populations with severe, clinically diagnosed psychiatric disorders requiring inpatient treatment or pharmacological intervention.",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "EC-03",
+      "text": "Studies involving concurrent pharmacological interventions where the effect of the app cannot be isolated.",
+      "type": "MANDATORY"
+    }
+  ],
+  "target_databases": [
+    "pubmed",
+    "semantic_scholar"
+  ],
+  "max_papers_per_db": 10000,
+  "date_range": [
+    2010,
+    2025
+  ],
+  "language_restrictions": [
+    "en"
+  ]
+}

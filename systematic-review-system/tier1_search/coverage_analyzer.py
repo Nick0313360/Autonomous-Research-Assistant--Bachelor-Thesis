@@ -77,6 +77,7 @@ class CoverageReport:
 
     has_gaps: bool
     identified_gaps: List[str] = field(default_factory=list)
+    total_records: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +149,7 @@ class CoverageAnalyzer:
             saturation=saturation,
             has_gaps=bool(gaps),
             identified_gaps=gaps,
+            total_records=len(records),
         )
 
     # ------------------------------------------------------------------

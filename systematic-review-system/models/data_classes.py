@@ -61,6 +61,10 @@ class SearchQuery(BaseModel):
     domain_keywords: List[str] = []
     year_range: Optional[tuple] = None
     max_papers_per_db: int = 500
+    # Pre-built query strings produced by LLMQueryBuilder.
+    # When set, connectors use these directly instead of rule-based construction.
+    pubmed_query_override: Optional[str] = None
+    s2_query_override: Optional[str] = None
 
     @field_validator("research_question")
     def research_question_not_empty(cls, v):

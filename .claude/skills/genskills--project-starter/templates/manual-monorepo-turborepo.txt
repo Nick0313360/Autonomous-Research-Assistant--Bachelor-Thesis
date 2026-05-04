@@ -1,0 +1,19 @@
+<name>/
+├── apps/
+│   ├── web/                  # Next.js or primary web app
+│   └── api/                  # Express/Fastify API service
+├── packages/
+│   ├── ui/                   # Shared React components
+│   │   ├── src/
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   ├── config-eslint/        # Shared ESLint config
+│   ├── config-typescript/    # Shared tsconfig bases
+│   └── shared/               # Shared types, utils, constants
+│       ├── src/
+│       └── package.json
+├── turbo.json                # Pipeline definitions
+├── package.json              # Root workspace config
+├── pnpm-workspace.yaml       # Workspace packages
+├── .gitignore
+└── README.md

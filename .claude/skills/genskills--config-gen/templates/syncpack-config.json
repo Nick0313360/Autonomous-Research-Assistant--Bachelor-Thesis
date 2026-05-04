@@ -1,0 +1,22 @@
+{
+  "versionGroups": [
+    {
+      "label": "Use workspace protocol for internal packages",
+      "dependencies": ["$LOCAL"],
+      "dependencyTypes": ["dev", "prod"],
+      "pinVersion": "workspace:*"
+    },
+    {
+      "label": "Consistent TypeScript version",
+      "dependencies": ["typescript"],
+      "policy": "sameRange"
+    }
+  ],
+  "semverGroups": [
+    {
+      "range": "^",
+      "dependencyTypes": ["prod", "dev"],
+      "dependencies": ["**"]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+<name>/
+├── src/
+│   └── index.ts
+├── tests/
+│   └── index.test.ts
+├── .gitignore
+├── tsconfig.json
+├── package.json
+├── eslint.config.js
+└── README.md

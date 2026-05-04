@@ -1,0 +1,18 @@
+<name>/
+├── src/
+│   ├── core/                      # Business logic (framework-agnostic)
+│   │   ├── domain/                # Entities, aggregates
+│   │   ├── ports/
+│   │   │   ├── inbound/           # Driving port interfaces
+│   │   │   └── outbound/          # Driven port interfaces
+│   │   └── services/              # Domain services (implement inbound ports)
+│   ├── adapters/
+│   │   ├── inbound/               # Driving adapters
+│   │   │   ├── rest/              # HTTP/REST adapter
+│   │   │   ├── grpc/              # gRPC adapter
+│   │   │   └── cli/               # CLI adapter
+│   │   └── outbound/              # Driven adapters
+│   │       ├── persistence/       # DB adapter (implements outbound port)
+│   │       ├── cache/             # Cache adapter
+│   │       └── messaging/         # Message broker adapter
+│   └── config/                    # Wiring, DI, bootstrap

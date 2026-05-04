@@ -1,0 +1,25 @@
+<name>/
+├── src/
+│   ├── background/
+│   │   └── service-worker.ts  # Background service worker
+│   ├── content/
+│   │   └── content-script.ts  # Content script
+│   ├── popup/
+│   │   ├── popup.html
+│   │   ├── popup.ts
+│   │   └── popup.css
+│   ├── options/
+│   │   ├── options.html
+│   │   └── options.ts
+│   └── shared/
+│       ├── storage.ts         # Chrome storage wrapper
+│       └── messaging.ts       # Message passing helpers
+├── public/
+│   ├── manifest.json          # Manifest V3
+│   └── icons/
+├── tests/
+│   └── storage.test.ts
+├── tsconfig.json
+├── vite.config.ts             # Build with CRXJS or manual
+├── package.json
+└── README.md

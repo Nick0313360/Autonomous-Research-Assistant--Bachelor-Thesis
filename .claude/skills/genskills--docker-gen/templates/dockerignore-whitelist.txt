@@ -1,0 +1,26 @@
+# Ignore everything
+*
+
+# Allow source code
+!src/
+!public/
+!prisma/
+!package.json
+!pnpm-lock.yaml
+!tsconfig.json
+!next.config.js
+!tailwind.config.js
+!postcss.config.js
+
+# Allow Docker support files
+!docker/
+!healthcheck.js
+
+# Still ignore nested unwanted files
+**/*.md
+**/.DS_Store
+**/node_modules
+**/.git
+**/.env
+**/.env.*
+!**/.env.example

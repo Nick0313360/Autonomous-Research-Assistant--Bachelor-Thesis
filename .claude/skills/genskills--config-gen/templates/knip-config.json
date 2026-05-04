@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": ["src/index.ts", "src/main.ts"],
+  "project": ["src/**/*.ts"],
+  "ignore": ["**/*.d.ts", "**/*.test.ts"],
+  "ignoreDependencies": ["@types/*"],
+  "ignoreBinaries": ["docker"],
+  "rules": {
+    "files": "error",
+    "dependencies": "error",
+    "unlisted": "error",
+    "exports": "warn",
+    "types": "warn"
+  }
+}

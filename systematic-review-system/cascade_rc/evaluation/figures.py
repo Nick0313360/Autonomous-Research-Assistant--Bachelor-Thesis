@@ -1,453 +1,506 @@
-"""Publication figures for CASCADE-RC systematic review screening.
+"""Publication figures for CASCADE-RC (IEEEtran-friendly).
 
-Generates three IEEE-quality figures as both .pdf and .png.
-Run:
+Loads sweep / ablation parquets and writes PDF + PNG under artefacts/cascade_rc/figures/.
+
+Run (deterministic bytes for PNG when hash seed fixed):
     PYTHONHASHSEED=0 python -m cascade_rc.evaluation.figures \\
         --artefact-dir artefacts/cascade_rc
 """
 from __future__ import annotations
 
+import math
 import os
 import warnings
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 # ---------------------------------------------------------------------------
-# Constants
+# Style
 # ---------------------------------------------------------------------------
 
-SEED = 0
-ALPHAS: list[float] = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
-RECALLS: list[float] = [0.80, 0.90, 0.95, 1.0]
-METHODS: list[str] = ["CASCADE-RC", "AUTOSTOP", "RLStop", "SCRC-T", "SCRC-I"]
-TOPICS: list[str] = [
-    "CD008874", "CD012080", "CD012768",
-    "CD011768", "CD011975", "CD011145",
-]
-FIGSIZE = (3.5, 2.6)
+FIGSIZE_SINGLE: tuple[float, float] = (3.5, 2.6)
+FIGSIZE_FIG3: tuple[float, float] = (7.0, 2.6)
 
-_METHOD_COLORS: dict[str, str] = {
-    "CASCADE-RC": "#1f77b4",
-    "AUTOSTOP":   "#ff7f0e",
-    "RLStop":     "#2ca02c",
-    "SCRC-T":     "#d62728",
-    "SCRC-I":     "#9467bd",
+_IEEE_RC: dict[str, object] = {
+    "font.family": "serif",
+    "font.size": 8,
+    "axes.titlesize": 8,
+    "axes.labelsize": 8,
+    "xtick.labelsize": 7,
+    "ytick.labelsize": 7,
+    "legend.fontsize": 6,
+    "lines.linewidth": 1.0,
+    "axes.linewidth": 0.8,
+    "figure.dpi": 150,
 }
-_METHOD_MARKERS: dict[str, str] = {
-    "CASCADE-RC": "o",
-    "AUTOSTOP":   "s",
-    "RLStop":     "^",
-    "SCRC-T":     "D",
-    "SCRC-I":     "v",
-}
-
-_ROUTING_LABELS = ["cheap-reject", "auto-include", "LLM-self-evident", "human"]
-_ROUTING_COLS   = ["cheap_reject", "auto_include", "llm", "human"]
-_ROUTING_COLORS = ["#aec7e8", "#98df8a", "#ffbb78", "#ff9896"]
 
 _PDF_META: dict[str, str] = {
     "Creator": "cascade_rc.evaluation.figures",
-    "Title":   "",
+    "Title": "",
     "Subject": "",
-    "Author":  "",
-    # CreationDate/ModDate omitted — supplying empty strings causes UserWarning
+    "Author": "",
 }
 
-_METHOD_NAME_MAP: dict[str, str] = {
-    "autostop":   "AUTOSTOP",
-    "rlstop":     "RLStop",
-    "scrc_i":     "SCRC-I",
-    "scrc_t":     "SCRC-T",
-    "cascade_rc": "CASCADE-RC",
-    "CASCADE-RC": "CASCADE-RC",
-}
+_DEFAULT_TOPICS: tuple[str, ...] = (
+    "CD008874",
+    "CD012080",
+    "CD012768",
+    "CD011768",
+    "CD011975",
+    "CD011145",
+)
 
-_IEEE_RC: dict[str, object] = {
-    "font.family":        "serif",
-    "font.size":          8,
-    "axes.titlesize":     8,
-    "axes.labelsize":     8,
-    "xtick.labelsize":    7,
-    "ytick.labelsize":    7,
-    "legend.fontsize":    6,
-    "lines.linewidth":    1.0,
-    "lines.markersize":   3.5,
-    "axes.linewidth":     0.6,
-    "grid.linewidth":     0.4,
-    "grid.alpha":         0.4,
-    "figure.dpi":         150,
-    "savefig.bbox":       "tight",
-    "savefig.pad_inches": 0.01,
-}
+_FIG1_ALPHA_GRID: tuple[float, ...] = (0.01, 0.02, 0.05, 0.10, 0.15, 0.20)
+_FIG2_ALPHA_GRID: tuple[float, ...] = (0.01, 0.05, 0.10, 0.15, 0.20)
 
-
-# ---------------------------------------------------------------------------
-# Style helper
-# ---------------------------------------------------------------------------
 
 def _apply_ieee_style() -> None:
-    """Apply IEEEtran-friendly matplotlib style in-place."""
     plt.rcParams.update(_IEEE_RC)
 
 
-# ---------------------------------------------------------------------------
-# Synthetic data generators
-# ---------------------------------------------------------------------------
-
-def _synthetic_figure1_data(rng: np.random.Generator) -> pd.DataFrame:
-    """Figure 1 synthetic: FNR vs alpha per method, CASCADE-RC below diagonal."""
-    rows: list[dict] = []
-    for method in METHODS:
-        # baselines run at target_recall ∈ {0.80,0.90,0.95} → α ∈ {0.20,0.10,0.05}
-        alphas = ALPHAS if method == "CASCADE-RC" else [0.05, 0.10, 0.20]
-        for alpha in alphas:
-            for topic in TOPICS:
-                if method == "CASCADE-RC":
-                    fnr = float(alpha * rng.uniform(0.50, 0.95))  # strictly below alpha (validity guarantee)
-                    wss = float(rng.uniform(0.35, 0.65))           # CASCADE-RC WSS range
-                else:
-                    noise = float(rng.normal(0.0, 0.025))
-                    fnr = float(np.clip(alpha + noise, 0.0, 1.0))  # baselines can cross diagonal
-                    wss = float(rng.uniform(0.20, 0.60))            # baseline WSS range
-                rows.append(
-                    {"method": method, "topic_id": topic,
-                     "alpha": alpha, "fnr": fnr, "wss": wss}
-                )
-    return pd.DataFrame(rows)
+def _certified_mask(df: pd.DataFrame) -> pd.Series:
+    if "status" not in df.columns:
+        return pd.Series(True, index=df.index)
+    return df["status"] == "certified"
 
 
-def _synthetic_figure2_data(rng: np.random.Generator) -> pd.DataFrame:
-    """Figure 2 synthetic: WSS vs target_recall per method."""
-    rows: list[dict] = []
-    _wss_base = {
-        "CASCADE-RC": 0.60, "AUTOSTOP": 0.50,
-        "RLStop": 0.45, "SCRC-T": 0.42, "SCRC-I": 0.40,
-    }
-    assert set(_wss_base) == set(METHODS), f"_wss_base keys out of sync with METHODS"
-    for method in METHODS:
-        base = _wss_base[method]
-        for recall in RECALLS:
-            for topic in TOPICS:
-                penalty = (recall - 0.80) * 0.8  # WSS drops ~0.8 per recall unit beyond minimum
-                wss = float(np.clip(base - penalty + rng.normal(0.0, 0.03), 0.0, 1.0))
-                rows.append(
-                    {"method": method, "topic_id": topic,
-                     "target_recall": recall, "wss": wss}
-                )
-    return pd.DataFrame(rows)
+def _alpha_match(s: pd.Series, alpha: float) -> pd.Series:
+    return np.isclose(s.astype(float), float(alpha), rtol=0.0, atol=1e-9)
 
 
-def _synthetic_figure3_data(rng: np.random.Generator) -> pd.DataFrame:
-    """Figure 3 synthetic: routing fractions vs alpha for CASCADE-RC."""
-    rows: list[dict] = []
-    for alpha in ALPHAS:
-        tightness = 1.0 - (alpha / 0.30)
-        base_reject  = 0.55 - tightness * 0.30
-        base_accept  = 0.25 - tightness * 0.05
-        base_llm     = 0.10 + tightness * 0.05
-        base_human   = 0.10 + tightness * 0.30
-        noise = rng.normal(0.0, 0.01, 4)
-        fracs = np.array([base_reject, base_accept, base_llm, base_human]) + noise
-        fracs = np.clip(fracs, 0.01, None)
-        fracs /= fracs.sum()
-        rows.append(
-            {
-                "alpha":        alpha,
-                "cheap_reject": float(fracs[0]),
-                "auto_include": float(fracs[1]),
-                "llm":          float(fracs[2]),
-                "human":        float(fracs[3]),
-            }
-        )
-    return pd.DataFrame(rows)
+def _alphas_from_grid_or_data(
+    grid: tuple[float, ...],
+    certified: pd.DataFrame,
+) -> list[float]:
+    present = certified["alpha"].astype(float).to_numpy()
+    chosen = [a for a in grid if np.any(np.isclose(present, a, rtol=0.0, atol=1e-9))]
+    if chosen:
+        return chosen
+    return sorted(float(x) for x in np.unique(present))
 
 
-# ---------------------------------------------------------------------------
-# Real data loaders (fall back to synthetic)
-# ---------------------------------------------------------------------------
-
-def _normalise_method_name(raw: str) -> str:
-    return _METHOD_NAME_MAP.get(raw, raw)
-
-
-def _load_fig1_data(artefact_dir: Path) -> pd.DataFrame:
-    """Load FNR-vs-alpha data; fall back to synthetic when parquets absent."""
-    baseline_dir = artefact_dir / "baselines"
-    frames: list[pd.DataFrame] = []
-
-    for fname in [
-        "autostop_results.parquet",
-        "rlstop_results.parquet",
-        "scrc_results.parquet",
-    ]:
-        path = baseline_dir / fname
-        if not path.exists():
-            continue
-        raw = pd.read_parquet(path)
-        sub = pd.DataFrame(
-            {
-                "method":   raw["method"].map(_normalise_method_name),
-                "topic_id": raw["topic_id"],
-                "alpha":    1.0 - raw["target_recall"].astype(float),
-                "fnr":      1.0 - raw["recall_achieved"].astype(float),
-                "wss":      raw["wss_95"].astype(float),
-            }
-        )
-        frames.append(sub.dropna(subset=["wss"]))
-
-    crc_path = baseline_dir / "cascade_rc_results.parquet"
-    if crc_path.exists():
-        raw = pd.read_parquet(crc_path)
-        sub = pd.DataFrame(
-            {
-                "method":   "CASCADE-RC",
-                "topic_id": raw["topic_id"],
-                "alpha":    raw["alpha"].astype(float),
-                "fnr":      raw["fnr"].astype(float),
-                "wss":      raw["wss_95"].astype(float),
-            }
-        )
-        frames.append(sub.dropna(subset=["wss"]))
-
-    if not frames:
-        return _synthetic_figure1_data(np.random.default_rng(SEED))
-
-    df = pd.concat(frames, ignore_index=True)
-    present = set(df["method"].unique())
-    missing = [m for m in METHODS if m not in present]
-    if missing:
-        synth = _synthetic_figure1_data(np.random.default_rng(SEED))
-        df = pd.concat(
-            [df, synth[synth["method"].isin(missing)]], ignore_index=True
-        )
-    return df
+def _fnr_column_for_method(method_label: str) -> str | None:
+    if method_label == "CASCADE-RC":
+        return "fnr_test"
+    if method_label == "SCRC-T":
+        return "scrc_t_fnr"
+    if method_label == "SCRC-I":
+        return "scrc_i_fnr"
+    if method_label == "AUTOSTOP":
+        return "autostop_fnr"
+    if method_label in ("Uncalibrated", "Uncalib"):
+        return "uncalibrated_fnr"
+    return None
 
 
-def _load_fig2_data(artefact_dir: Path) -> pd.DataFrame:
-    """Load WSS-vs-recall data; fall back to synthetic when parquets absent."""
-    baseline_dir = artefact_dir / "baselines"
-    frames: list[pd.DataFrame] = []
-
-    for fname in [
-        "autostop_results.parquet",
-        "rlstop_results.parquet",
-        "scrc_results.parquet",
-    ]:
-        path = baseline_dir / fname
-        if not path.exists():
-            continue
-        raw = pd.read_parquet(path)
-        sub = pd.DataFrame(
-            {
-                "method":        raw["method"].map(_normalise_method_name),
-                "topic_id":      raw["topic_id"],
-                "target_recall": raw["target_recall"].astype(float),
-                "wss":           raw["wss_95"].astype(float),
-            }
-        )
-        frames.append(sub.dropna(subset=["wss"]))
-
-    crc_path = baseline_dir / "cascade_rc_results.parquet"
-    if crc_path.exists():
-        raw = pd.read_parquet(crc_path)
-        sub = pd.DataFrame(
-            {
-                "method":        "CASCADE-RC",
-                "topic_id":      raw["topic_id"],
-                "target_recall": 1.0 - raw["alpha"].astype(float),
-                "wss":           raw["wss_95"].astype(float),
-            }
-        )
-        frames.append(sub.dropna(subset=["wss"]))
-
-    if not frames:
-        return _synthetic_figure2_data(np.random.default_rng(SEED))
-
-    df = pd.concat(frames, ignore_index=True)
-    present = set(df["method"].unique())
-    missing = [m for m in METHODS if m not in present]
-    if missing:
-        synth = _synthetic_figure2_data(np.random.default_rng(SEED))
-        df = pd.concat(
-            [df, synth[synth["method"].isin(missing)]], ignore_index=True
-        )
-    return df
-
-
-def _load_fig3_data(artefact_dir: Path) -> pd.DataFrame:
-    """Load cascade routing sweep; fall back to synthetic."""
-    path = artefact_dir / "baselines" / "cascade_rc_routing.parquet"
-    if path.exists():
-        return pd.read_parquet(path)
-    return _synthetic_figure3_data(np.random.default_rng(SEED))
-
-
-# ---------------------------------------------------------------------------
-# Plot functions
-# ---------------------------------------------------------------------------
-
-def _save(fig: plt.Figure, out_dir: Path, stem: str) -> None:
-    """Save figure as PDF (fixed metadata) and PNG."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_dir / f"{stem}.pdf", format="pdf", metadata=_PDF_META)
-    fig.savefig(out_dir / f"{stem}.png", format="png")
+def _savefig_stem(fig: plt.Figure, output_dir: Path, stem: str) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for ext in ("pdf", "png"):
+        path = output_dir / f"{stem}.{ext}"
+        save_kw: dict[str, object] = {"dpi": 200, "bbox_inches": "tight"}
+        if ext == "pdf":
+            save_kw["metadata"] = _PDF_META
+        fig.savefig(path, format=ext, **save_kw)
+        print(f"  Saved {path}")
     plt.close(fig)
 
 
-def plot_figure1(df: pd.DataFrame, out_dir: Path) -> None:
-    """Figure 1: Risk-control validity — empirical FNR vs target alpha.
+def _synthetic_alpha_sweep_placeholder() -> pd.DataFrame:
+    """Tiny deterministic table so module runs when sweep parquet is absent."""
+    rng = np.random.default_rng(0)
+    rows: list[dict[str, object]] = []
+    for alpha in _FIG1_ALPHA_GRID:
+        for topic_id in _DEFAULT_TOPICS:
+            base = float(alpha) * rng.uniform(0.4, 0.92)
+            rows.append(
+                {
+                    "topic_id": topic_id,
+                    "alpha": alpha,
+                    "status": "certified",
+                    "fnr_test": base,
+                    "wss_95": float(rng.uniform(0.15, 0.55)),
+                    "frac_human_review": float(np.clip(0.85 - 2.5 * alpha, 0.05, 0.95)),
+                    "scrc_t_fnr": float(np.clip(alpha + rng.normal(0.0, 0.02), 0.0, 1.0)),
+                    "scrc_i_fnr": float(np.clip(alpha + rng.normal(0.0, 0.02), 0.0, 1.0)),
+                    "autostop_fnr": float(np.clip(alpha + rng.normal(0.0, 0.03), 0.0, 1.0)),
+                    "uncalibrated_fnr": 0.0,
+                }
+            )
+    return pd.DataFrame(rows)
 
-    One line per method; y=x diagonal reference; shaded ±1 SE band.
-    CASCADE-RC sits on or below the diagonal (validity guarantee).
-    """
-    with plt.rc_context(_IEEE_RC):
-        fig, ax = plt.subplots(figsize=FIGSIZE)
 
-        ax.plot([0, 0.35], [0, 0.35], color="black", linewidth=0.8,
-                linestyle="--", label="y = x", zorder=1)
+def _synthetic_budget_split_placeholder() -> pd.DataFrame:
+    rng = np.random.default_rng(1)
+    deltas = [0.01, 0.02, 0.03, 0.05, 0.07, 0.09]
+    rows: list[dict[str, object]] = []
+    for topic_id in _DEFAULT_TOPICS:
+        peak = 8 + int(rng.integers(-2, 3))
+        for de in deltas:
+            dist = abs(de - 0.04)
+            lam = max(1, int(peak - 15 * dist + rng.normal(0.0, 0.8)))
+            slack_r = float(np.clip(0.75 + 0.25 * np.exp(-((de - 0.04) ** 2) / 0.0008), 0.0, 1.2))
+            rows.append(
+                {
+                    "topic_id": topic_id,
+                    "delta_eta": de,
+                    "n_certified": lam,
+                    "slack_ratio": slack_r,
+                }
+            )
+    return pd.DataFrame(rows)
 
-        for method in METHODS:
-            sub = df[df["method"] == method]
+
+def _load_alpha_sweep_df(artefact_dir: Path) -> pd.DataFrame:
+    path = artefact_dir / "results" / "alpha_sweep.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    warnings.warn(
+        f"Missing {path}; using synthetic alpha-sweep placeholder for figures.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+    return _synthetic_alpha_sweep_placeholder()
+
+
+def _load_budget_split_df(artefact_dir: Path) -> pd.DataFrame:
+    path = artefact_dir / "ablations" / "budget_split.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    warnings.warn(
+        f"Missing {path}; using synthetic budget-split placeholder for Figure 3.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+    return _synthetic_budget_split_placeholder()
+
+
+def _resolve_autostop_parquet(artefact_dir: Path) -> Path | None:
+    candidates = [
+        artefact_dir / "baselines" / "autostop" / "autostop_results.parquet",
+        artefact_dir / "baselines" / "autostop_results.parquet",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
+def load_autostop_wss_reference(artefact_dir: Path, recall: float = 0.95) -> float:
+    """Mean WSS@95 across topics from AUTOSTOP results (target_recall == recall)."""
+    path = _resolve_autostop_parquet(artefact_dir)
+    if path is None:
+        warnings.warn(
+            "AUTOSTOP parquet not found; operational-cost reference line omitted.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return float("nan")
+    raw = pd.read_parquet(path)
+    sub = raw[np.isclose(raw["target_recall"].astype(float), recall, rtol=0.0, atol=1e-6)]
+    if sub.empty:
+        return float("nan")
+    vals = sub["wss_95"].astype(float).replace(-999.0, np.nan).dropna()
+    if vals.empty:
+        return float("nan")
+    return float(vals.mean())
+
+
+def _autostop_wss_for_topic(artefact_dir: Path, topic_id: str, recall: float = 0.95) -> float:
+    """WSS@95 for a single topic from the AUTOSTOP parquet."""
+    path = _resolve_autostop_parquet(artefact_dir)
+    if path is None:
+        return float("nan")
+    raw = pd.read_parquet(path)
+    sub = raw[
+        (raw["topic_id"] == topic_id)
+        & np.isclose(raw["target_recall"].astype(float), recall, rtol=0.0, atol=1e-6)
+    ]
+    if sub.empty:
+        return float("nan")
+    vals = sub["wss_95"].astype(float).replace(-999.0, np.nan).dropna()
+    return float(vals.mean()) if not vals.empty else float("nan")
+
+
+# ---------------------------------------------------------------------------
+# Figure 1 — Risk-control validity
+# ---------------------------------------------------------------------------
+
+def plot_risk_validity(alpha_sweep_df: pd.DataFrame, output_dir: Path) -> None:
+    """Empirical FNR vs target α; diagonal y = α; ±1 SE band across topics."""
+    _apply_ieee_style()
+    certified = alpha_sweep_df[_certified_mask(alpha_sweep_df)].copy()
+
+    methods: dict[str, dict[str, object]] = {
+        "CASCADE-RC": {"color": "#1f77b4", "marker": "o", "lw": 1.5},
+        "SCRC-T": {"color": "#ff7f0e", "marker": "s", "lw": 1.2},
+        "SCRC-I": {"color": "#2ca02c", "marker": "^", "lw": 1.2},
+        "AUTOSTOP": {"color": "#9467bd", "marker": "D", "lw": 1.0},
+        "Uncalibrated": {"color": "#d62728", "marker": "x", "lw": 1.0, "ls": "--"},
+    }
+
+    alpha_values = _alphas_from_grid_or_data(_FIG1_ALPHA_GRID, certified)
+
+    fig, ax = plt.subplots(figsize=(3.5, 3.0))
+    ax.plot([0, 0.22], [0, 0.22], "k--", lw=0.8, label=r"$y=\alpha$ (bound)", zorder=1)
+
+    for method_name, style in methods.items():
+        col = _fnr_column_for_method(method_name)
+        if col is None or col not in certified.columns:
+            continue
+
+        fnr_means: list[float] = []
+        fnr_ses: list[float] = []
+        for alpha in alpha_values:
+            sub = certified[_alpha_match(certified["alpha"], alpha)]
             if sub.empty:
+                fnr_means.append(float("nan"))
+                fnr_ses.append(0.0)
                 continue
-            agg = (
-                sub.groupby("alpha")["fnr"]
-                .agg(mean="mean", std="std", count="count")
-                .reset_index()
-            )
-            agg["se"] = agg["std"] / np.sqrt(agg["count"].clip(lower=1))
-            agg = agg.sort_values("alpha")
-            c = _METHOD_COLORS[method]
-            m = _METHOD_MARKERS[method]
-            ax.plot(
-                agg["alpha"], agg["mean"],
-                color=c, marker=m, label=method, zorder=3,
-            )
-            ax.fill_between(
-                agg["alpha"],
-                agg["mean"] - agg["se"],
-                agg["mean"] + agg["se"],
-                color=c, alpha=0.15, zorder=2,
-            )
+            vals = sub[col].dropna().astype(float).to_numpy()
+            if len(vals) == 0:
+                fnr_means.append(float("nan"))
+                fnr_ses.append(0.0)
+            else:
+                fnr_means.append(float(np.mean(vals)))
+                fnr_ses.append(float(np.std(vals) / np.sqrt(len(vals))))
 
-        ax.set_xlabel(r"Target risk $\alpha$")
-        ax.set_ylabel("Empirical FNR")
-        ax.set_xlim(0.02, 0.33)
-        ax.set_ylim(0.0, 0.35)
-        ax.set_xticks(ALPHAS)
-        ax.grid(True)
-        ax.legend(loc="upper left", ncol=1, framealpha=0.7)
-        fig.tight_layout(pad=0.3)
-        _save(fig, out_dir, "figure1_risk_validity")
+        if all(np.isnan(fnr_means)):
+            continue
 
+        alphas_plot = list(alpha_values)
+        ax.plot(
+            alphas_plot,
+            fnr_means,
+            marker=str(style["marker"]),
+            markersize=4,
+            lw=float(style["lw"]),
+            color=str(style["color"]),
+            label=method_name,
+            zorder=3,
+            ls=str(style.get("ls", "-")),
+        )
+        lo = [m - e for m, e in zip(fnr_means, fnr_ses)]
+        hi = [m + e for m, e in zip(fnr_means, fnr_ses)]
+        ax.fill_between(
+            alphas_plot,
+            lo,
+            hi,
+            alpha=0.15,
+            color=str(style["color"]),
+            zorder=2,
+        )
 
-def plot_figure2(df: pd.DataFrame, out_dir: Path) -> None:
-    """Figure 2: Efficiency-safety trade-off — WSS vs target recall.
-
-    One line per method; higher WSS = more work saved.
-    """
-    with plt.rc_context(_IEEE_RC):
-        fig, ax = plt.subplots(figsize=FIGSIZE)
-
-        for method in METHODS:
-            sub = df[df["method"] == method]
-            if sub.empty:
-                continue
-            agg = (
-                sub.groupby("target_recall")["wss"]
-                .agg(mean="mean", std="std", count="count")
-                .reset_index()
-            )
-            agg["se"] = agg["std"] / np.sqrt(agg["count"].clip(lower=1))
-            agg = agg.sort_values("target_recall")
-            c = _METHOD_COLORS[method]
-            m = _METHOD_MARKERS[method]
-            ax.plot(
-                agg["target_recall"], agg["mean"],
-                color=c, marker=m, label=method,
-            )
-            ax.fill_between(
-                agg["target_recall"],
-                agg["mean"] - agg["se"],
-                agg["mean"] + agg["se"],
-                color=c, alpha=0.15,
-            )
-
-        ax.set_xlabel("Target recall")
-        ax.set_ylabel("WSS@target")
-        ax.set_xlim(0.77, 1.03)
-        ax.set_ylim(0.0, 0.75)
-        ax.set_xticks(RECALLS)
-        ax.grid(True)
-        ax.legend(loc="upper right", ncol=1, framealpha=0.7)
-        fig.tight_layout(pad=0.3)
-        _save(fig, out_dir, "figure2_wss_efficiency")
+    ax.set_xlabel("Target risk α")
+    ax.set_ylabel("Empirical FNR (test)")
+    ax.set_xlim(-0.005, 0.22)
+    ax.set_ylim(-0.02, 0.35)
+    ax.axhline(0, color="black", lw=0.4, ls="-", alpha=0.3)
+    ax.annotate(
+        "Valid region\n(FNR ≤ α)",
+        xy=(0.14, 0.07),
+        fontsize=5,
+        color="gray",
+        ha="center",
+        style="italic",
+    )
+    ax.legend(loc="upper left", framealpha=0.9, edgecolor="none")
+    fig.tight_layout()
+    _savefig_stem(fig, output_dir, "fig1_risk_validity")
 
 
-def plot_figure3(df: pd.DataFrame, out_dir: Path) -> None:
-    """Figure 3: Cascade escalation dynamics — routing fractions vs alpha.
+# ---------------------------------------------------------------------------
+# Figure 2 — Operational cost (dual axis)
+# ---------------------------------------------------------------------------
 
-    Stacked area: cheap-reject | auto-include | LLM-self-evident | human.
-    """
-    with plt.rc_context(_IEEE_RC):
-        fig, ax = plt.subplots(figsize=FIGSIZE)
+def plot_operational_cost(
+    alpha_sweep_df: pd.DataFrame,
+    autostop_wss: float,
+    output_dir: Path,
+) -> None:
+    """WSS@95 (left) and human escalation rate (right) vs α for CASCADE-RC."""
+    _apply_ieee_style()
+    certified = alpha_sweep_df[_certified_mask(alpha_sweep_df)].copy()
 
-        df_sorted = df.sort_values("alpha")
-        x = df_sorted["alpha"].to_numpy()
-        ys = [df_sorted[col].to_numpy() for col in _ROUTING_COLS]
+    alpha_values = list(_FIG2_ALPHA_GRID)
+    cascade_wss: list[float] = []
+    cascade_esc: list[float] = []
 
-        ax.stackplot(
-            x, *ys,
-            labels=_ROUTING_LABELS,
-            colors=_ROUTING_COLORS,
+    for alpha in alpha_values:
+        sub = certified[_alpha_match(certified["alpha"], alpha)]
+        if sub.empty:
+            cascade_wss.append(float("nan"))
+            cascade_esc.append(float("nan"))
+            continue
+        wss = sub["wss_95"].astype(float).replace(-999.0, np.nan)
+        cascade_wss.append(float(wss.mean()))
+        cascade_esc.append(float(sub["frac_human_review"].astype(float).mean()))
+
+    fig, ax1 = plt.subplots(figsize=FIGSIZE_SINGLE)
+    ax2 = ax1.twinx()
+
+    (l1,) = ax1.plot(
+        alpha_values,
+        cascade_wss,
+        "b-o",
+        markersize=4,
+        lw=1.5,
+        label="CASCADE-RC WSS@95",
+    )
+    (l2,) = ax2.plot(
+        alpha_values,
+        cascade_esc,
+        "r--s",
+        markersize=4,
+        lw=1.2,
+        label="Human escalation rate",
+    )
+
+    if not math.isnan(autostop_wss):
+        ax1.axhline(
+            autostop_wss,
+            color="darkorange",
+            ls=":",
+            lw=1.0,
+            label=f"AUTOSTOP WSS@95={autostop_wss:.2f}",
+        )
+
+    ax1.axvline(0.10, color="gray", ls=":", lw=0.8, alpha=0.7)
+    ax1.text(0.105, -0.07, "α=0.10", fontsize=5, color="gray")
+    ax1.axhline(0, color="black", lw=0.4, alpha=0.3)
+
+    ax1.set_ylim(-0.10, 0.60)
+    ax2.set_ylim(0, 1.05)
+    ax1.set_xlabel("Target risk α")
+    ax1.set_ylabel("WSS@95", color="blue")
+    ax2.set_ylabel("Human escalation rate", color="red")
+    ax1.tick_params(axis="y", labelcolor="blue")
+    ax2.tick_params(axis="y", labelcolor="red")
+    ax1.legend(handles=[l1, l2], loc="upper right", fontsize=5, framealpha=0.9)
+
+    fig.tight_layout()
+    _savefig_stem(fig, output_dir, "fig2_operational_cost")
+
+
+# ---------------------------------------------------------------------------
+# Figure 3 — Budget-split ablation
+# ---------------------------------------------------------------------------
+
+def plot_budget_split_ablation(ablation_df: pd.DataFrame, output_dir: Path) -> None:
+    """|Λ̂| and slack ratio vs δ_η (two panels)."""
+    _apply_ieee_style()
+
+    lam_col = "lambda_hat_size" if "lambda_hat_size" in ablation_df.columns else "n_certified"
+    if lam_col not in ablation_df.columns:
+        raise ValueError("ablation_df must contain 'n_certified' or 'lambda_hat_size'.")
+
+    delta_eta_values = sorted(ablation_df["delta_eta"].unique())
+    topic_ids = ablation_df["topic_id"].unique()
+
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=FIGSIZE_FIG3)
+
+    for i, topic_id in enumerate(sorted(topic_ids)):
+        sub = ablation_df[ablation_df["topic_id"] == topic_id].sort_values("delta_eta")
+        color = colors[i % len(colors)]
+
+        ax1.plot(
+            sub["delta_eta"],
+            sub[lam_col],
+            marker="o",
+            markersize=3,
+            lw=1.0,
+            color=color,
+            label=topic_id,
             alpha=0.85,
         )
 
-        ax.set_xlabel(r"Target risk $\alpha$")
-        ax.set_ylabel("Fraction of corpus")
-        ax.set_xlim(ALPHAS[0], ALPHAS[-1])
-        ax.set_ylim(0.0, 1.0)
-        ax.set_xticks(ALPHAS)
-        ax.grid(True, axis="y")
-        ax.legend(
-            loc="upper center",
-            bbox_to_anchor=(0.5, -0.28),
-            ncol=2,
-            framealpha=0.7,
-        )
-        fig.tight_layout(pad=0.3)  # out-of-axes legend included by savefig.bbox="tight" in _IEEE_RC
-        _save(fig, out_dir, "figure3_escalation")
+        if "slack_ratio" in sub.columns:
+            ax2.plot(
+                sub["delta_eta"],
+                sub["slack_ratio"],
+                marker="s",
+                markersize=3,
+                lw=1.0,
+                color=color,
+                label=topic_id,
+                alpha=0.85,
+            )
+
+    ax1.axvline(0.03, color="gray", ls=":", lw=0.8)
+    y0, _y1 = ax1.get_ylim()
+    ax1.text(
+        0.032,
+        y0 + 0.02 * (ax1.get_ylim()[1] - y0),
+        "δ_η=0.03\n(default)",
+        fontsize=5,
+        color="gray",
+    )
+    ax1.set_xlabel("η-budget δ_η", fontsize=8)
+    ax1.set_ylabel("|Λ̂| certified configurations", fontsize=8)
+    ax1.legend(fontsize=5, loc="upper right")
+
+    ax2.axhline(1.0, color="black", ls="--", lw=0.8, label="ratio=1 (exact)")
+    ax2.set_xlabel("η-budget δ_η", fontsize=8)
+    ax2.set_ylabel(r"Slack ratio $\hat{\eta}^{-\star} / \hat{\eta}^{+}_{\mathrm{boot}}$", fontsize=8)
+    ax2.set_ylim(0, 1.25)
+    ax2.legend(fontsize=5, loc="lower right")
+
+    fig.tight_layout()
+    _savefig_stem(fig, output_dir, "fig3_budget_split_ablation")
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Entry
 # ---------------------------------------------------------------------------
 
-def main(artefact_dir: Path = Path("artefacts/cascade_rc")) -> None:
-    """Generate all three publication figures.
-
-    Reads from <artefact_dir>/baselines/ (falls back to synthetic data).
-    Writes PDF + PNG to <artefact_dir>/figures/.
-    """
+def gen_figures(artefact_dir: Path = Path("artefacts/cascade_rc")) -> None:
+    """Load parquets and write fig1–fig3 (PDF + PNG) under <artefact_dir>/figures/."""
     if os.environ.get("PYTHONHASHSEED") != "0":
         warnings.warn(
-            "PYTHONHASHSEED is not '0'; figure byte-reproducibility is not guaranteed. "
+            "PYTHONHASHSEED is not '0'; PNG byte-reproducibility is not guaranteed. "
             "Re-run as: PYTHONHASHSEED=0 python -m cascade_rc.evaluation.figures",
             RuntimeWarning,
             stacklevel=2,
         )
+
     artefact_dir = Path(artefact_dir)
     out_dir = artefact_dir / "figures"
-    out_dir.mkdir(parents=True, exist_ok=True)
 
-    plot_figure1(_load_fig1_data(artefact_dir), out_dir)
-    plot_figure2(_load_fig2_data(artefact_dir), out_dir)
-    plot_figure3(_load_fig3_data(artefact_dir), out_dir)
+    alpha_df = _load_alpha_sweep_df(artefact_dir)
+    autostop_wss = load_autostop_wss_reference(artefact_dir)
+    budget_df = _load_budget_split_df(artefact_dir)
+
+    # Aggregate figures (all topics)
+    plot_risk_validity(alpha_df, out_dir)
+    plot_operational_cost(alpha_df, autostop_wss, out_dir)
+    plot_budget_split_ablation(budget_df, out_dir)
+
+    # Per-topic figures
+    all_topics = sorted(
+        set(alpha_df["topic_id"].unique()) | set(budget_df["topic_id"].unique())
+    )
+    for topic_id in all_topics:
+        topic_dir = out_dir / topic_id
+        topic_alpha = alpha_df[alpha_df["topic_id"] == topic_id]
+        topic_budget = budget_df[budget_df["topic_id"] == topic_id]
+        topic_autostop = _autostop_wss_for_topic(artefact_dir, topic_id)
+        print(f"\n  [{topic_id}]")
+        if not topic_alpha.empty:
+            plot_risk_validity(topic_alpha, topic_dir)
+            plot_operational_cost(topic_alpha, topic_autostop, topic_dir)
+        if not topic_budget.empty:
+            plot_budget_split_ablation(topic_budget, topic_dir)
+
+
+def main(artefact_dir: Path = Path("artefacts/cascade_rc")) -> None:
+    """Backward-compatible alias for :func:`gen_figures`."""
+    gen_figures(artefact_dir)
 
 
 if __name__ == "__main__":
@@ -461,4 +514,4 @@ if __name__ == "__main__":
         help="Root artefact directory (default: artefacts/cascade_rc)",
     )
     args = parser.parse_args()
-    main(artefact_dir=args.artefact_dir)
+    gen_figures(artefact_dir=args.artefact_dir)

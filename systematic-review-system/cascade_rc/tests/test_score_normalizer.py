@@ -137,3 +137,52 @@ def test_calibrator_predict_empty_input() -> None:
     assert isinstance(result, np.ndarray), f"Expected np.ndarray, got {type(result)}"
     assert result.shape == (0,), f"Expected shape (0,), got {result.shape}"
     assert result.dtype == np.float64, f"Expected float64, got {result.dtype}"
+
+
+# ---------------------------------------------------------------------------
+# test_minmax_scale_s
+# ---------------------------------------------------------------------------
+
+import pandas as pd
+
+
+def test_minmax_scale_s_squashed_range() -> None:
+    """Squashed range [0.011, 0.032] is mapped to [0.0, 1.0]."""
+    from cascade_rc.data.score_normalizer import minmax_scale_s
+
+    rng = np.random.default_rng(0)
+    s_raw = rng.uniform(0.011, 0.032, 200)
+    df = pd.DataFrame({"s": s_raw, "y_abstract": rng.integers(0, 2, 200)})
+    df_scaled = minmax_scale_s(df)
+
+    assert df_scaled is not df, "Must return a copy, not mutate in-place"
+    assert float(df_scaled["s"].min()) == pytest.approx(0.0, abs=1e-12)
+    assert float(df_scaled["s"].max()) == pytest.approx(1.0, abs=1e-12)
+    # rank preservation: Spearman = 1.0
+    from scipy.stats import spearmanr
+    rho, _ = spearmanr(df["s"].values, df_scaled["s"].values)
+    assert rho == pytest.approx(1.0, abs=1e-10)
+
+
+def test_minmax_scale_s_idempotent() -> None:
+    """Scaling twice is idempotent (second scaling of [0,1] is a no-op)."""
+    from cascade_rc.data.score_normalizer import minmax_scale_s
+
+    rng = np.random.default_rng(1)
+    s_raw = rng.uniform(0.011, 0.032, 100)
+    df = pd.DataFrame({"s": s_raw})
+    df_once = minmax_scale_s(df)
+    df_twice = minmax_scale_s(df_once)
+    # Second scaling of already-[0,1] data should be a no-op
+    np.testing.assert_allclose(df_twice["s"].values, df_once["s"].values, atol=1e-12)
+
+
+def test_minmax_scale_s_constant_noop() -> None:
+    """Constant s column (s_min == s_max) returns the dataframe unchanged."""
+    from cascade_rc.data.score_normalizer import minmax_scale_s
+
+    df = pd.DataFrame({"s": [0.02] * 50})
+    df_out = minmax_scale_s(df)
+    # must not raise, must not produce NaN
+    assert not df_out["s"].isna().any()
+    np.testing.assert_array_equal(df_out["s"].values, df["s"].values)

@@ -47,7 +47,11 @@ class CascadeRCConfig(BaseSettings):
     ncbi_email: str = ""
     ncbi_api_key: str | None = None
     rrf_k: int = 60
-    prompt_template_version: str = "v1"
+    prompt_template_version: str = "v2_forgiving"
+    llm_endpoint: str = "https://inference.mlmp.ti.bfh.ch/api/v1"
+    n_concurrent: int = 20
+    n_jobs_calib: int = -1     # joblib workers for calibration grid (-1 = all cores)
+    normalize_base_scores: bool = False  # pre-calibration rank-preserving min-max scaling of s
 
     model_config = SettingsConfigDict(
         env_prefix="CRC_",

@@ -186,3 +186,23 @@ def test_minmax_scale_s_constant_noop() -> None:
     # must not raise, must not produce NaN
     assert not df_out["s"].isna().any()
     np.testing.assert_array_equal(df_out["s"].values, df["s"].values)
+
+
+# ---------------------------------------------------------------------------
+# test_normalize_base_scores_config_flag
+# ---------------------------------------------------------------------------
+
+def test_config_normalize_base_scores_defaults_false() -> None:
+    """CascadeRCConfig.normalize_base_scores defaults to False."""
+    from cascade_rc.config import CascadeRCConfig
+
+    cfg = CascadeRCConfig()
+    assert cfg.normalize_base_scores is False
+
+
+def test_config_normalize_base_scores_can_be_set_true() -> None:
+    """CascadeRCConfig.normalize_base_scores can be set to True."""
+    from cascade_rc.config import CascadeRCConfig
+
+    cfg = CascadeRCConfig(normalize_base_scores=True)
+    assert cfg.normalize_base_scores is True

@@ -32,9 +32,13 @@ unaffected.
 
 ## Invariants
 
-1. **Global scaling only.** Min and max are computed from the **entire topic dataframe** (all
-   splits: is_split ∈ {0, 1, 2}) in a single pass. Per-split scaling would produce different
-   coordinate systems for `θ̂` and the WSS evaluation, violating the exchangeability assumption.
+1. **Global scaling only — derive constants from the full dataframe, once, on load.**
+   `s_min` and `s_max` must be computed from the **entire topic dataframe** (all splits:
+   is_split ∈ {0, 1, 2}) immediately after `pd.read_parquet()`, before any row filtering.
+   These two constants are then used for the entire session — they must never be
+   re-derived from a filtered subset (e.g. calibration-only rows). Per-split scaling would
+   map calibration and test scores to different coordinate systems, breaking the transductive
+   exchangeability that CLEF-TAR's static benchmark requires.
 
 2. **Thresholds and test data must share a coordinate system.** `θ̂[0]` (`λ_lo`) is learned on
    the scaled calibration space. The WSS evaluation (`s < λ_lo`) must also use the same scaled
@@ -71,16 +75,27 @@ def minmax_scale_s(df: pd.DataFrame) -> pd.DataFrame:
 
     Computed globally (all rows) so calibration and test splits stay in the
     same coordinate system. No-op when all scores are identical.
+    Logs original range and mean for paper reporting.
     """
     s_min = df["s"].min()
     s_max = df["s"].max()
+    s_mean = df["s"].mean()
     if s_max > s_min:
+        logger.debug(
+            "Scaling s-scores. Original: [%.4f, %.4f], Mean: %.4f → New: [0.0, 1.0]",
+            s_min, s_max, s_mean,
+        )
         df = df.copy()
         df["s"] = (df["s"] - s_min) / (s_max - s_min)
+    else:
+        logger.debug("minmax_scale_s: constant s=%.4f — no-op.", s_min)
     return df
 ```
 
-Returns a copy only when a transformation is applied; returns the input unchanged otherwise.
+- Returns a copy only when a transformation is applied; returns the input unchanged otherwise.
+- The DEBUG log line (`[DEBUG] Scaling s-scores. Original: [0.011, 0.032], Mean: 0.015 → New:
+  [0.0, 1.0]`) provides the original range and mean needed to justify the scaling in the paper's
+  "Data" section without any post-hoc reconstruction.
 
 ### 3. Injection Site 1 — `cascade_rc/calibration/main_calibrate.py::calibrate()`
 
@@ -124,6 +139,30 @@ Without this site, the comparison is physically incoherent (threshold in `[0,1]`
 Add `"normalize_base_scores": config.normalize_base_scores` to the `config_snapshot` dict
 inside `CertificationResult`. This makes every saved certificate self-documenting about whether
 scaling was active.
+
+---
+
+## Naming conventions
+
+| Symbol | Name | Rationale |
+|--------|------|-----------|
+| Config flag | `normalize_base_scores` | Human-readable; matches the pipeline concept ("normalise before calibration") |
+| Helper function | `minmax_scale_s` | Mathematically explicit; encodes the algorithm (min-max) and the target column (`s`) |
+
+These names must not be conflated. The config flag controls **whether** scaling happens; the
+function defines **how**. Both names are final.
+
+---
+
+## Research audit
+
+| Property | Status | Mechanism |
+|----------|--------|-----------|
+| Exchangeability | ✓ Preserved | Global min/max derived once from full df; identical transform applied to all splits |
+| Monotonicity | ✓ Preserved | Affine transformation preserves rank order |
+| Grid resolution | ✓ Restored | `s ∈ [0,1]` gives K quantile steps full dynamic range |
+| Ablation safety | ✓ Safe | `normalize_base_scores=False` default; two-run comparison produces unscaled vs. scaled WSS |
+| Paper audit trail | ✓ Covered | DEBUG log records original `[s_min, s_max, s_mean]`; `config_snapshot` records flag state |
 
 ---
 

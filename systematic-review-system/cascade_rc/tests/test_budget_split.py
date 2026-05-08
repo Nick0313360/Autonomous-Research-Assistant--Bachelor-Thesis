@@ -70,7 +70,7 @@ def _make_synthetic_parquet(
 
 
 def test_dry_run_schema(tmp_path: Path) -> None:
-    """--dry-run produces a zero-row parquet with the exact 14-column schema."""
+    """--dry-run produces a zero-row parquet with the exact 15-column schema."""
     from cascade_rc.ablations.budget_split import PARQUET_SCHEMA, run_sweep
 
     run_sweep(data_dir=tmp_path, out_dir=tmp_path / "out", dry_run=True)
@@ -134,3 +134,90 @@ def test_run_sweep_abstention_row_schema(tmp_path: Path) -> None:
     assert df["alpha_dagger_at_theta"].isna().all()
     assert set(df["delta_eta"].unique()) == {0.01, 0.03, 0.05, 0.07, 0.09}
     assert set(df["delta_ltt"].unique()) == {0.09, 0.07, 0.05, 0.03, 0.01}
+
+
+# ---------------------------------------------------------------------------
+# test_run_topic_passes_scaled_df_to_compute_wss
+# ---------------------------------------------------------------------------
+
+def test_run_topic_passes_scaled_df_to_compute_wss(tmp_path) -> None:
+    """_run_topic() with normalize_base_scores=True passes s ∈ [0,1] df to _compute_wss."""
+    import numpy as np
+    import pandas as pd
+    from unittest.mock import patch, MagicMock
+    from cascade_rc.ablations.budget_split import _run_topic
+    from cascade_rc.config import CascadeRCConfig, LTTBudget
+
+    # Build synthetic parquet with squashed s ∈ [0.011, 0.032]
+    rng = np.random.default_rng(7)
+    n = 300
+    is_split = np.array([0] * 60 + [1] * 150 + [2] * 90, dtype=np.int8)
+    y = np.zeros(n, dtype=np.int64)
+    y[:12] = 1
+    y[60:90] = 1
+    y[210:228] = 1
+    df_raw = pd.DataFrame({
+        "pmid": [str(i) for i in range(n)],
+        "s": rng.uniform(0.011, 0.032, n),
+        "u": rng.uniform(0.0, 1.0, n),
+        "y_abstract": y,
+        "llm_y_hat": rng.integers(0, 2, n, dtype=np.int64),
+        "is_split": is_split,
+        "is_calib": np.where(np.array([0] * 60 + [1] * 150 + [2] * 90) == 1, 1, 0),
+    })
+    parquet_path = tmp_path / "CD_test.parquet"
+    df_raw.to_parquet(parquet_path, index=False)
+
+    # Build a fake CertificationResult with theta_hat in [0,1] scaled space
+    mock_result = MagicMock()
+    mock_result.theta_hat = np.array([0.3, 0.7, 0.5])
+    mock_result.lambda_hat_mask = np.array([True, False])
+    mock_result.theta_grid = np.array([[0.3, 0.7, 0.5], [0.0, 0.0, 0.0]])
+    mock_result.slack_mat = np.zeros((2, 30))
+    mock_result.eta_lcb_grid = np.zeros(2)
+    mock_result.alpha_dagger_grid = np.zeros(2)
+    mock_result.m_plus = 30
+
+    captured = {}
+
+    def fake_compute_wss(result, df_full):
+        captured["df"] = df_full
+        return {"wss": 0.5, "status": "ok", "achieved_recall": 0.95}
+
+    cfg = CascadeRCConfig(
+        normalize_base_scores=True,
+        n_jobs_calib=1,
+        ltt=LTTBudget(
+            alpha=0.10,
+            delta_total=0.10,
+            delta_eta=0.03,
+            delta_LTT=0.07,
+            K=3,
+            B=3,
+            ensemble_temperature=0.7,
+            c_human=5.0,
+            c_llm=0.001,
+            delta_bootstrap=0.05,
+        ),
+    )
+
+    with patch("cascade_rc.calibration.main_calibrate.calibrate", return_value=mock_result):
+        with patch("cascade_rc.ablations.budget_split._compute_wss", side_effect=fake_compute_wss):
+            _run_topic(
+                topic_id="CD_test",
+                parquet_path=parquet_path,
+                delta_eta=0.03,
+                delta_ltt=0.07,
+                config=cfg,
+                out_dir=tmp_path,
+            )
+
+    assert "df" in captured, "_compute_wss was never called"
+    s_max = float(captured["df"]["s"].max())
+    s_min = float(captured["df"]["s"].min())
+    assert s_max == pytest.approx(1.0, abs=1e-9), (
+        f"Expected s.max()=1.0 after scaling, got {s_max}"
+    )
+    assert s_min == pytest.approx(0.0, abs=1e-9), (
+        f"Expected s.min()=0.0 after scaling, got {s_min}"
+    )

@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
 import anthropic
+import httpx
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from openai import RateLimitError as OpenAIRateLimitError
@@ -62,8 +63,13 @@ class LLMClient:
     CLAUDE_MODEL = "claude-sonnet-4-6"
 
     def __init__(self) -> None:
+        self._http = httpx.AsyncClient(
+            limits=httpx.Limits(max_connections=15, max_keepalive_connections=15),
+            timeout=httpx.Timeout(60.0),
+        )
         self._anthropic = anthropic.AsyncAnthropic(
             api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+            http_client=self._http,
         )
         self._openai = AsyncOpenAI(
             base_url=os.getenv(
@@ -71,7 +77,11 @@ class LLMClient:
                 "https://inference.mlmp.ti.bfh.ch/api/v1",
             ),
             api_key=os.getenv("OPENAI_API_KEY", "no-key"),
+            http_client=self._http,
         )
+
+    async def aclose(self) -> None:
+        await self._http.aclose()
 
     # ------------------------------------------------------------------
     # Public API
@@ -301,15 +311,18 @@ if __name__ == "__main__":
         model = os.getenv("SMOKE_MODEL", LLMClient.CLAUDE_MODEL)
         print(f"Smoke-testing with model: {model}")
 
-        resp = await client.complete(
-            prompt='Return JSON: {"synonyms": ["systematic review", "literature review"]}',
-            system="You are a research expert. Reply only with valid JSON.",
-            model=model,
-            max_tokens=64,
-        )
-        print(f"content    : {resp.content}")
-        print(f"parsed_json: {resp.parsed_json}")
-        print(f"tokens     : in={resp.input_tokens} out={resp.output_tokens}")
-        print(f"latency    : {resp.latency_ms:.0f}ms")
+        try:
+            resp = await client.complete(
+                prompt='Return JSON: {"synonyms": ["systematic review", "literature review"]}',
+                system="You are a research expert. Reply only with valid JSON.",
+                model=model,
+                max_tokens=64,
+            )
+            print(f"content    : {resp.content}")
+            print(f"parsed_json: {resp.parsed_json}")
+            print(f"tokens     : in={resp.input_tokens} out={resp.output_tokens}")
+            print(f"latency    : {resp.latency_ms:.0f}ms")
+        finally:
+            await client.aclose()
 
     asyncio.run(_smoke())

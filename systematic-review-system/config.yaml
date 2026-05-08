@@ -1,0 +1,19 @@
+clef_tar:
+  release: "2019-TAR/Task2/Testing"
+  topics:
+    dta_headline:
+      - CD008874  # m+ ≈ 94  (calibration)
+      - CD012080  # m+ ≈ 85
+      - CD012768  # m+ ≈ 41  (N_min stress case)
+    intervention_extension:
+      - CD011768  # m+ ≈ 112
+      - CD011975  # m+ ≈ 65
+    prognosis_extension:
+      - CD011145  # m+ ≈ 70 (single prognosis topic)
+  split:
+    method: "stratified-by-y"
+    score_calib_frac: 0.15
+    conformal_calib_frac: 0.50
+    test_frac: 0.35
+    seed: 20260429
+    use_three_way: true

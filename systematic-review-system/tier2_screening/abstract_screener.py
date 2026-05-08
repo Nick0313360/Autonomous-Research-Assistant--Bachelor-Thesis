@@ -46,18 +46,17 @@ _FALSE_CAP = 0.30
 
 
 def _load_template() -> str:
-    if _PROMPT_PATH.exists():
-        return _PROMPT_PATH.read_text(encoding="utf-8")
-    # Inline fallback so the module works even without the config file
     return (
-        "You are a systematic review screener.\n\n"
+        "You are an expert medical screener performing FIRST-PASS ABSTRACT SCREENING.\n\n"
         "PICO:\n{pico_text}\n\n"
         "Criterion:\n{criterion_text}\n\n"
         "Title: {title}\nAbstract: {abstract}\n\n"
-        'Reply with JSON only: {"satisfies": true|false|"uncertain", '
-        '"confidence": <0.0-1.0>, "reasoning": "<one sentence>"}'
+        "CRITICAL INSTRUCTIONS:\n"
+        "1. Abstracts often omit details. Give the paper the benefit of the doubt.\n"
+        "2. Missing information = 'Uncertain'. DO NOT exclude for missing data.\n"
+        "3. Output ONLY raw JSON. No markdown blocks like ```json. Start with { and end with }.\n\n"
+        '{"satisfies": true, "confidence": 0.8, "reasoning": "brief"}'
     )
-
 
 _TEMPLATE = _load_template()
 

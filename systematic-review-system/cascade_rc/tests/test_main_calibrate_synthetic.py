@@ -113,7 +113,8 @@ def test_certification_synthetic(tmp_path: Path) -> None:
     assert result.lambda_hat_mask.sum() > 0, "Λ̂ must be non-empty"
 
     # Reference θ̂ computed 2026-05-01, seed=0, K=20, split_seed=20260429
-    REFERENCE_THETA_HAT = np.array([0.0, 0.0, 0.0])
+    # Updated 2026-05-08: corrected cost function now includes auto-include overhead
+    REFERENCE_THETA_HAT = np.array([0.0, 0.5884308538885089, 0.0])
     np.testing.assert_allclose(result.theta_hat, REFERENCE_THETA_HAT, atol=1.0 / 19)
 
 

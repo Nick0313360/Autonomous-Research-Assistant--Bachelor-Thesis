@@ -1,6 +1,8 @@
 """Tests for cascade_rc/evaluation/metrics.py."""
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,7 +11,13 @@ from cascade_rc.evaluation.metrics import (
     _derive_routing,
     _predictions_from_routing,
     abstention_rate,
+    aggregate_cross_topic,
     bootstrap_eta_upper,
+    compute_fnr,
+    compute_routing_fractions,
+    compute_slack_ratio,
+    compute_wss,
+    evaluate_certificate,
     llm_query_volume,
     slack_ratio_diagnostic,
     wss_at_recall,
@@ -207,3 +215,221 @@ def test_predictions_from_routing_screened_vs_skipped() -> None:
     })
     preds = _predictions_from_routing(routing)
     np.testing.assert_array_equal(preds, [1, 0, 1, 1])
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by new metric tests
+# ---------------------------------------------------------------------------
+
+def _make_test_df(
+    s: list[float],
+    u: list[float],
+    y: list[int],
+    is_split: int = 2,
+) -> pd.DataFrame:
+    """Build a minimal dataframe for the test split."""
+    return pd.DataFrame({
+        "s": s,
+        "u": u,
+        "y_abstract": y,
+        "is_split": [is_split] * len(s),
+    })
+
+
+# ---------------------------------------------------------------------------
+# TASK 4, test 3: routing fractions sum to 1
+# ---------------------------------------------------------------------------
+
+def test_routing_fractions_sum_to_one() -> None:
+    """cheap_reject + auto_include + escalated must equal exactly 1.0."""
+    df = _make_test_df(
+        s=[0.1, 0.2, 0.5, 0.6, 0.9],
+        u=[0.0, 0.0, 0.8, 0.2, 0.0],
+        y=[0,   1,   0,   1,   1],
+    )
+    theta_hat = (0.3, 0.7, 0.5)
+    fracs = compute_routing_fractions(df, theta_hat)
+    total = fracs["frac_cheap_reject"] + fracs["frac_auto_include"] + fracs["frac_escalated"]
+    assert total == pytest.approx(1.0, abs=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# TASK 4, test 1: FNR is 0 when all records are auto-included
+# ---------------------------------------------------------------------------
+
+def test_fnr_zero_when_all_included() -> None:
+    """λ_lo=0, λ_hi=0 → s >= λ_hi for all → auto-include → FNR must be 0."""
+    df = _make_test_df(
+        s=[0.0, 0.3, 0.7, 1.0],
+        u=[0.5, 0.5, 0.5, 0.5],
+        y=[1,   1,   0,   1],
+    )
+    theta_hat = (0.0, 0.0, 0.5)
+    fnr = compute_fnr(df, theta_hat)
+    assert fnr == pytest.approx(0.0, abs=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# TASK 4, test 2: WSS is NaN when recall target is not achieved
+# ---------------------------------------------------------------------------
+
+def test_wss_nan_when_recall_missed() -> None:
+    """High λ_lo rejects everything → recall=0 < 0.95 → compute_wss returns NaN."""
+    df = _make_test_df(
+        s=[0.1, 0.2, 0.3],
+        u=[0.5, 0.5, 0.5],
+        y=[1,   1,   0],
+    )
+    theta_hat = (0.99, 1.0, 0.5)  # λ_lo=0.99 → all cheap-rejected, recall=0
+    wss = compute_wss(df, theta_hat, recall_target=0.95)
+    assert math.isnan(wss)
+
+
+# ---------------------------------------------------------------------------
+# Additional compute_routing_fractions tests
+# ---------------------------------------------------------------------------
+
+def test_routing_fractions_all_cheap_reject() -> None:
+    """All s < λ_lo → frac_cheap_reject=1, all others=0."""
+    df = _make_test_df(s=[0.1, 0.2], u=[0.5, 0.5], y=[1, 0])
+    fracs = compute_routing_fractions(df, theta_hat=(0.5, 0.8, 0.5))
+    assert fracs["frac_cheap_reject"] == pytest.approx(1.0)
+    assert fracs["frac_auto_include"] == pytest.approx(0.0)
+    assert fracs["frac_escalated"] == pytest.approx(0.0)
+    assert fracs["llm_abstention_rate"] == pytest.approx(0.0)
+
+
+def test_routing_fractions_llm_abstention_rate() -> None:
+    """llm_abstention_rate = frac_human_review / frac_escalated."""
+    # 4 records: 2 llm_followed (u>=0.5), 2 human_review (u<0.5)
+    df = _make_test_df(
+        s=[0.5, 0.5, 0.5, 0.5],
+        u=[0.8, 0.9, 0.2, 0.1],
+        y=[0, 0, 1, 1],
+    )
+    fracs = compute_routing_fractions(df, theta_hat=(0.3, 0.8, 0.5))
+    assert fracs["frac_escalated"] == pytest.approx(1.0)
+    assert fracs["llm_abstention_rate"] == pytest.approx(0.5)
+
+
+# ---------------------------------------------------------------------------
+# Additional compute_fnr tests
+# ---------------------------------------------------------------------------
+
+def test_fnr_no_positives_returns_zero() -> None:
+    """No positive labels → FNR defaults to 0.0."""
+    df = _make_test_df(s=[0.1, 0.9], u=[0.5, 0.5], y=[0, 0])
+    assert compute_fnr(df, theta_hat=(0.3, 0.7, 0.5)) == pytest.approx(0.0)
+
+
+def test_fnr_all_positives_cheap_rejected() -> None:
+    """All positives below λ_lo → FNR = 1.0."""
+    df = _make_test_df(s=[0.1, 0.2], u=[0.5, 0.5], y=[1, 1])
+    fnr = compute_fnr(df, theta_hat=(0.5, 0.8, 0.5))
+    assert fnr == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# Additional compute_wss tests
+# ---------------------------------------------------------------------------
+
+def test_wss_all_auto_included_perfect_recall() -> None:
+    """λ_lo=0, λ_hi=0 → all included → recall=1.0 → WSS = (FN+TN)/N - 0.05."""
+    df = _make_test_df(
+        s=[0.5, 0.5, 0.5, 0.5, 0.5],
+        u=[0.5, 0.5, 0.5, 0.5, 0.5],
+        y=[1,   1,   0,   0,   0],
+    )
+    wss = compute_wss(df, theta_hat=(0.0, 0.0, 0.5), recall_target=0.95)
+    # All included, so TN=0, FN=0 — WSS = (0+0)/5 - 0.05 = -0.05
+    assert not math.isnan(wss)
+    assert wss == pytest.approx(-0.05, abs=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# compute_slack_ratio
+# ---------------------------------------------------------------------------
+
+def test_compute_slack_ratio_normal() -> None:
+    assert compute_slack_ratio(0.8, 1.0) == pytest.approx(0.8)
+
+
+def test_compute_slack_ratio_zero_denominator_returns_nan() -> None:
+    assert math.isnan(compute_slack_ratio(0.5, 0.0))
+
+
+def test_compute_slack_ratio_tight_bound() -> None:
+    """Values near 1.0 indicate tight bound."""
+    assert compute_slack_ratio(0.99, 1.0) == pytest.approx(0.99)
+
+
+# ---------------------------------------------------------------------------
+# evaluate_certificate
+# ---------------------------------------------------------------------------
+
+def _make_full_df() -> pd.DataFrame:
+    """20-record df with is_split in {1,2} for evaluate_certificate."""
+    rng = np.random.default_rng(0)
+    n = 20
+    return pd.DataFrame({
+        "s": rng.uniform(0, 1, n),
+        "u": rng.uniform(0, 1, n),
+        "y_abstract": ([1] * 5 + [0] * 5) * 2,
+        "is_split": ([1] * 10 + [2] * 10),
+    })
+
+
+def test_evaluate_certificate_returns_required_keys() -> None:
+    """evaluate_certificate must return all Table-3 keys."""
+    df = _make_full_df()
+    result = evaluate_certificate(df, theta_hat=(0.0, 0.0, 0.5), alpha=0.10, B=5)
+    required = {
+        "fnr_test", "wss_95", "recall_achieved", "alpha",
+        "certificate_valid", "n_test", "n_test_positives",
+        "llm_calls_per_abstract", "frac_cheap_reject", "frac_auto_include",
+        "frac_llm_followed", "frac_human_review", "frac_escalated",
+        "llm_abstention_rate",
+    }
+    assert required <= set(result.keys())
+
+
+def test_evaluate_certificate_valid_when_fnr_le_alpha() -> None:
+    """certificate_valid is True iff fnr_test <= alpha."""
+    df = _make_full_df()
+    result = evaluate_certificate(df, theta_hat=(0.0, 0.0, 0.5), alpha=0.10, B=5)
+    # With λ_lo=0,λ_hi=0 all auto-included → FNR=0 ≤ 0.10
+    assert result["certificate_valid"] is True
+    assert result["fnr_test"] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# aggregate_cross_topic
+# ---------------------------------------------------------------------------
+
+def test_aggregate_cross_topic_mean_se() -> None:
+    """Mean and SE are computed correctly over a simple list of dicts."""
+    records = [
+        {"fnr_test": 0.0, "wss_95": 0.4, "frac_human_review": 0.1, "llm_abstention_rate": 0.2},
+        {"fnr_test": 0.1, "wss_95": 0.5, "frac_human_review": 0.2, "llm_abstention_rate": 0.3},
+    ]
+    out = aggregate_cross_topic(records)
+    assert out["fnr_test_mean"] == pytest.approx(0.05)
+    assert out["wss_95_mean"] == pytest.approx(0.45)
+    assert out["fnr_test_n"] == 2
+
+
+def test_aggregate_cross_topic_excludes_sentinel() -> None:
+    """wss_95=-999.0 (NaN sentinel) must be excluded from aggregation."""
+    records = [
+        {"fnr_test": 0.0, "wss_95": -999.0, "frac_human_review": 0.1, "llm_abstention_rate": 0.1},
+        {"fnr_test": 0.1, "wss_95": 0.5,    "frac_human_review": 0.2, "llm_abstention_rate": 0.2},
+    ]
+    out = aggregate_cross_topic(records)
+    assert out["wss_95_n"] == 1
+    assert out["wss_95_mean"] == pytest.approx(0.5)
+
+
+def test_aggregate_cross_topic_empty_list() -> None:
+    """Empty input → empty output dict (no KeyError)."""
+    out = aggregate_cross_topic([])
+    assert out == {}

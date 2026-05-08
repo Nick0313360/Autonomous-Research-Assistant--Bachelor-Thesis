@@ -211,3 +211,19 @@ __marimo__/
 artefacts/
 graphify-out/
 cascade_rc/baselines/autostop_vendor/ret/
+
+# macOS Finder duplicate files (e.g. "file 2.py")
+* 2.*
+* 2
+
+# Protocol / topic JSON data files
+*_protocol.json
+
+# Throwaway data / scratch files
+test2.json
+
+# Temporary debug and fix scripts
+cascade_rc/debug/
+fix_syntax*.py
+fix_syntax_bruteforce*.py
+_verify_fixes.py

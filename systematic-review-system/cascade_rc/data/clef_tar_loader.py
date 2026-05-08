@@ -12,15 +12,27 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Topic-to-family mapping for CLEF-TAR 2019 Task 2 test set
+# Topic-to-family mapping for CLEF-TAR Task 2
+# CD011975 and CD011145 appear in 2019 Training DTA (not Testing Intervention)
 _TOPIC_FAMILY: dict[str, str] = {
     "CD008874": "DTA",
     "CD012080": "DTA",
     "CD012768": "DTA",
     "CD011768": "Intervention",
-    "CD011975": "Intervention",
-    "CD011145": "Intervention",
+    "CD011975": "DTA",
+    "CD011145": "DTA",
 }
+
+# "Testing" for 2019 test set; "Training" for 2019 training topics
+_TOPIC_SPLIT: dict[str, str] = {
+    "CD008874": "Testing",
+    "CD012080": "Testing",
+    "CD012768": "Testing",
+    "CD011768": "Testing",
+    "CD011975": "Training",
+    "CD011145": "Training",
+}
+
 _ALLOWED_TOPICS: frozenset[str] = frozenset(_TOPIC_FAMILY)
 
 _REPO_URL = "https://github.com/CLEF-TAR/tar.git"
@@ -29,8 +41,13 @@ _SPARSE_PATHS = ["2017-TAR", "2018-TAR", "2019-TAR/Task2"]
 
 # Per-family aggregate qrel file name (2019 testing format)
 _QREL_TEST_FILE = "qrel_abs_test.txt"
-# Legacy single-file name kept for backward compat
-_QRELS_FILE_LEGACY = "full.test.dta.abs.2019.qrels"
+# Legacy qrel filenames per family/split
+_QRELS_LEGACY: dict[tuple[str, str], str] = {
+    ("DTA",          "Testing"):  "full.test.dta.abs.2019.qrels",
+    ("DTA",          "Training"): "full.train.dta.abs.2019.qrels",
+    ("Intervention", "Testing"):  "full.test.intervention.abs.2019.qrels",
+    ("Intervention", "Training"): "full.train.int.abs.2019.qrels",
+}
 
 _M_PLUS_WARN_THRESHOLD = 26
 
@@ -113,6 +130,41 @@ def _parse_topic_file(path: Path) -> tuple[str, str, list[str]]:
             pids.append(line)
 
     return title, "\n".join(query_lines), pids
+
+
+def _parse_topic_2017(data_dir: Path, topic_id: str) -> tuple[str, str, list[str]]:
+    """Parse a 2017-TAR topic from extracted_data .pids and .title files.
+
+    The 2017 format stores candidates in a .pids file (one 'TOPIC_ID PMID' per
+    line) and the title in a .title file (one 'TOPIC_ID <title text>' line).
+    Searches both testing/ and training/ subdirectories.
+    """
+    for subdir in ("testing", "training"):
+        base = data_dir / "2017-TAR" / subdir / "extracted_data"
+        pids_path  = base / f"{topic_id}.pids"
+        title_path = base / f"{topic_id}.title"
+        if not pids_path.exists():
+            continue
+
+        pids: list[str] = []
+        for line in pids_path.read_text(encoding="utf-8").splitlines():
+            parts = line.strip().split()
+            if len(parts) == 2 and parts[0] == topic_id:
+                pids.append(parts[1])
+
+        title = ""
+        if title_path.exists():
+            for line in title_path.read_text(encoding="utf-8").splitlines():
+                parts = line.strip().split(None, 1)
+                if len(parts) == 2 and parts[0] == topic_id:
+                    title = parts[1]
+                    break
+
+        return title, "", pids  # 2017 format has no inline boolean query
+
+    raise FileNotFoundError(
+        f"2017-TAR topic files for {topic_id} not found under {data_dir}/2017-TAR/"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -242,29 +294,34 @@ def load_topic(
         )
 
     resolved_family = family if family is not None else _TOPIC_FAMILY[topic_id]
-    base = data_dir / "2019-TAR" / "Task2" / "Testing" / resolved_family
+    resolved_split  = _TOPIC_SPLIT.get(topic_id, "Testing")
+    base = data_dir / "2019-TAR" / "Task2" / resolved_split / resolved_family
     if not base.exists():
         raise FileNotFoundError(
             f"CLEF-TAR data not found at {base}. Run download_clef_tar_2019() first."
         )
 
-    topic_path = base / "topics" / topic_id
-
-    # Try the new per-family aggregate file; fall back to legacy DTA file if absent.
+    # Resolve qrels: prefer canonical name, then family/split-specific legacy name.
     qrels_path = base / "qrels" / _QREL_TEST_FILE
     if not qrels_path.exists():
-        legacy = base / "qrels" / _QRELS_FILE_LEGACY
-        if legacy.exists():
+        legacy_name = _QRELS_LEGACY.get((resolved_family, resolved_split))
+        legacy = base / "qrels" / legacy_name if legacy_name else None
+        if legacy is not None and legacy.exists():
             qrels_path = legacy
         else:
             raise FileNotFoundError(
                 f"Qrels file not found at {base / 'qrels'}. Re-run download."
             )
 
-    if not topic_path.exists():
-        raise FileNotFoundError(f"Topic file not found: {topic_path}")
-
-    title, boolean_query, candidate_pmids = _parse_topic_file(topic_path)
+    # Resolve topic (candidate PMIDs): try 2019 path first, then 2017-TAR.
+    topic_path = base / "topics" / topic_id
+    if topic_path.exists():
+        title, boolean_query, candidate_pmids = _parse_topic_file(topic_path)
+    else:
+        logger.warning(
+            "Topic file not found at %s — falling back to 2017-TAR format.", topic_path
+        )
+        title, boolean_query, candidate_pmids = _parse_topic_2017(data_dir, topic_id)
     qrels_abstract = _parse_qrels(qrels_path, topic_id)
 
     m_plus = sum(v for v in qrels_abstract.values() if v == 1)

@@ -3,8 +3,8 @@
 Implements the optimal walk order from Lemma 6 and the fixed-sequence
 rejection procedure from Theorem 1 (Angelopoulos et al. 2021, LTT).
 
-Walk order: lex-ascending in (λ_lo, λ_hi, τ_SE) so the safest operating
-point (smallest thresholds) is tested first and the riskiest last.
+Walk order: λ_lo ASC, λ_hi ASC, τ_SE DESC — so the safest operating
+point (λ_lo=min, λ_hi=min, τ_SE=max) is tested first and the riskiest last.
 
 Rejection rule: reject H_θ as long as p_HB(θ) ≤ δ_LTT; stop at first
 acceptance.  The fixed-sequence structure gives FWER ≤ δ_LTT without
@@ -16,18 +16,22 @@ import numpy as np
 
 
 def safest_to_riskiest_order(grid: np.ndarray) -> np.ndarray:
-    """Return indices that lex-sort the grid by (λ_lo, λ_hi, τ_SE) ascending.
-
-    The "safest" point (0, 0, 0) is visited first; the "riskiest" last.
-
-    Args:
-        grid: (G, 3) array with columns [λ_lo, λ_hi, τ_SE].
-
-    Returns:
-        (G,) index array giving the walk order.
     """
-    # np.lexsort: last key = primary sort key
-    return np.lexsort((grid[:, 2], grid[:, 1], grid[:, 0]))
+    Safest-to-Riskiest ordering for the three-route cascade.
+
+    Monotonicity of L̃(θ; ω) = y·[1{s<λ_lo} + 1{λ_lo≤s<λ_hi}·1{u≥τ_SE}]:
+      λ_lo: increasing → more cheap-rejects → more FN → risk increases → ASC
+      λ_hi: increasing → fewer auto-includes → more LLM queries → risk increases → ASC
+      τ_SE: increasing → stricter gate → more human routing → risk DECREASES → DESC
+
+    Safest corner: (λ_lo=min, λ_hi=min, τ_SE=max)
+    Riskiest corner: (λ_lo=max, λ_hi=max, τ_SE=min)
+
+    np.lexsort: last key = primary sort key; sorts ASC by default.
+    Negate τ_SE column to achieve DESC sort on τ_SE.
+    """
+    tau_SE_desc = -grid[:, 2]   # negate for descending sort
+    return np.lexsort((tau_SE_desc, grid[:, 1], grid[:, 0]))
 
 
 def walk_reject(

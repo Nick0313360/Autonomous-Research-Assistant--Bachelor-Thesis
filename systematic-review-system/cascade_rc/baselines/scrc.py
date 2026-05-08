@@ -283,7 +283,7 @@ def run_sweep(
                 examined = int((decisions == "accept").sum())
                 predictions = (decisions == "accept").astype(np.int64)
                 y_true = test["y_abstract"].to_numpy(dtype=np.int64)
-                wss = wss_at_recall(predictions, y_true, target_recall=0.95)
+                wss = wss_at_recall(predictions, y_true, target_recall=target_recall)
 
                 row: dict = {
                     "method":          method,

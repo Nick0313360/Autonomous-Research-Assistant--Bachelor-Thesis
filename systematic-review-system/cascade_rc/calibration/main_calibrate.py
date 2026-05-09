@@ -164,9 +164,9 @@ def calibrate(
 
     # Step 1: Filter calibration positives
     df = pd.read_parquet(calib_parquet)
-    if config.normalize_base_scores:
-        from cascade_rc.data.score_normalizer import minmax_scale_s
-        df = minmax_scale_s(df)
+    if config.quantile_scale_base_scores:
+        from cascade_rc.data.score_normalizer import quantile_scale_s
+        df = quantile_scale_s(df)
 
     # Backwards-compat shim: old two-way split has 'is_calib' but no 'is_split'
     if "is_split" not in df.columns:
@@ -326,7 +326,7 @@ def calibrate(
             "K": K,
             "c_human": c_human,
             "c_llm": c_llm,
-            "normalize_base_scores": config.normalize_base_scores,
+            "quantile_scale_base_scores": config.quantile_scale_base_scores,
         },
         timestamp=datetime.now(timezone.utc).isoformat(),
     )

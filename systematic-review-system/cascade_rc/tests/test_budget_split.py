@@ -141,7 +141,7 @@ def test_run_sweep_abstention_row_schema(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_run_topic_passes_scaled_df_to_compute_wss(tmp_path) -> None:
-    """_run_topic() with normalize_base_scores=True passes s ∈ [0,1] df to _compute_wss."""
+    """_run_topic() with quantile_scale_base_scores=True passes uniformized s df to _compute_wss."""
     import numpy as np
     import pandas as pd
     from unittest.mock import patch, MagicMock
@@ -185,7 +185,7 @@ def test_run_topic_passes_scaled_df_to_compute_wss(tmp_path) -> None:
         return {"wss": 0.5, "status": "ok", "achieved_recall": 0.95}
 
     cfg = CascadeRCConfig(
-        normalize_base_scores=True,
+        quantile_scale_base_scores=True,
         n_jobs_calib=1,
         ltt=LTTBudget(
             alpha=0.10,
@@ -216,8 +216,9 @@ def test_run_topic_passes_scaled_df_to_compute_wss(tmp_path) -> None:
     s_max = float(captured["df"]["s"].max())
     s_min = float(captured["df"]["s"].min())
     assert s_max == pytest.approx(1.0, abs=1e-9), (
-        f"Expected s.max()=1.0 after scaling, got {s_max}"
+        f"Expected s.max()=1.0 after quantile scaling, got {s_max}"
     )
-    assert s_min == pytest.approx(0.0, abs=1e-9), (
-        f"Expected s.min()=0.0 after scaling, got {s_min}"
+    # quantile min is 1/n (> 0); confirm scaling was applied and s_min is not raw
+    assert 0.0 < s_min < 0.01, (
+        f"Expected 0 < s.min() < 0.01 after quantile scaling (1/n), got {s_min}"
     )

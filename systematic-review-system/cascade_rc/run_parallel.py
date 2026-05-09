@@ -177,8 +177,7 @@ def run_parallel(
             sym = "✓" if result["status"] == "success" else "✗"
             print(f"  {sym} {topic_id}: {result['status']} in {elapsed_min:.1f}min")
             if result["status"] == "failed":
-                err_snippet = (result.get("error") or "")[:400]
-                print(f"    {err_snippet}")
+                print(result.get("error") or "")
 
     wall_elapsed = time.monotonic() - wall_start
     succeeded = sum(1 for r in results.values() if r["status"] == "success")

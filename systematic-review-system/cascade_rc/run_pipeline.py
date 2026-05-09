@@ -273,6 +273,10 @@ def step_score_s(topic_id: str, parquet_path: Path, data_dir: Path) -> pd.DataFr
     from cascade_rc.data.clef_tar_loader import load_topic
     from cascade_rc.data.update_parquet import add_scores_to_parquet
 
+    if not parquet_path.exists():
+        logger.info("Step score_s: parquet missing — running ingest first.")
+        step_ingest(topic_id, data_dir, parquet_path.parent)
+
     df = pd.read_parquet(parquet_path)
     s_col = df["s"] if "s" in df.columns else None
     already_calibrated = (

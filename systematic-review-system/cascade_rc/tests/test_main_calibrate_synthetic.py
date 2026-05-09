@@ -160,7 +160,7 @@ def test_resume_from_partial(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# test_calibrate_normalize_base_scores
+# test_calibrate_quantile_scale_base_scores
 # ---------------------------------------------------------------------------
 
 def _make_squashed_parquet(tmp_path: Path) -> Path:
@@ -189,13 +189,13 @@ def _make_squashed_parquet(tmp_path: Path) -> Path:
 
 
 def test_calibrate_config_snapshot_contains_normalize_flag(tmp_path: Path) -> None:
-    """calibrate() persists normalize_base_scores in config_snapshot."""
+    """calibrate() persists quantile_scale_base_scores in config_snapshot."""
     from cascade_rc.calibration.main_calibrate import calibrate
 
     parquet_path = _make_squashed_parquet(tmp_path)
 
     cfg = CascadeRCConfig(
-        normalize_base_scores=True,
+        quantile_scale_base_scores=True,
         n_jobs_calib=1,
         ltt=LTTBudget(
             alpha=0.10,
@@ -222,4 +222,4 @@ def test_calibrate_config_snapshot_contains_normalize_flag(tmp_path: Path) -> No
     assert not isinstance(result, tuple), (
         f"calibrate() abstained unexpectedly: {result}"
     )
-    assert result.config_snapshot["normalize_base_scores"] is True
+    assert result.config_snapshot["quantile_scale_base_scores"] is True

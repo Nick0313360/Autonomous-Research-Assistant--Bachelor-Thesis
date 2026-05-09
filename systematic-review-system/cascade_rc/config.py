@@ -51,7 +51,7 @@ class CascadeRCConfig(BaseSettings):
     llm_endpoint: str = "https://inference.mlmp.ti.bfh.ch/api/v1"
     n_concurrent: int = 20
     n_jobs_calib: int = -1     # joblib workers for calibration grid (-1 = all cores)
-    normalize_base_scores: bool = False  # pre-calibration rank-preserving min-max scaling of s
+    quantile_scale_base_scores: bool = False  # pre-calibration rank-based quantile uniformization of s to [0,1]
 
     model_config = SettingsConfigDict(
         env_prefix="CRC_",

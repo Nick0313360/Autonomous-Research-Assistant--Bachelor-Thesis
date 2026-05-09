@@ -306,26 +306,24 @@ def apply_platt(calibrator: PlattCalibrator, raw_scores: np.ndarray) -> np.ndarr
     return calibrator.predict_proba(X)[:, 1].astype(np.float32)
 
 
-def minmax_scale_s(df: pd.DataFrame) -> pd.DataFrame:
-    """Rank-preserving min-max scale the 's' column to [0, 1].
+def quantile_scale_s(df: pd.DataFrame) -> pd.DataFrame:
+    """Rank-based quantile uniformization of the 's' column to (0, 1].
 
-    Computes s_min and s_max from ALL rows immediately on load — never from a
-    filtered split — so every split stays in the same coordinate system.
-    No-op when all scores are identical (avoids divide-by-zero).
-    Logs original [min, max] and mean for paper reporting.
+    Maps each score to its percentile rank computed over ALL rows before any
+    split filter is applied, so every stratum shares the same coordinate system.
+    Immune to outliers: a single BM25 misfire at 0.99 cannot compress the rest
+    of the distribution. Rank preservation is guaranteed by construction.
+    No-op when all scores are identical (avoids degenerate uniform output).
     """
     s_min = float(df["s"].min())
     s_max = float(df["s"].max())
-    s_mean = float(df["s"].mean())
     if s_max > s_min:
-        logger.debug(
-            "Scaling s-scores. Original: [%.4f, %.4f], Mean: %.4f → New: [0.0, 1.0]",
-            s_min, s_max, s_mean,
-        )
         df = df.copy()
-        df["s"] = (df["s"] - s_min) / (s_max - s_min)
-    else:
-        logger.debug("minmax_scale_s: constant s=%.4f — no-op.", s_min)
+        df["s"] = df["s"].rank(method="min", pct=True)
+        logger.debug(
+            "Applied quantile uniformization to s-scores. Original range: [%.4f, %.4f].",
+            s_min, s_max,
+        )
     return df
 
 

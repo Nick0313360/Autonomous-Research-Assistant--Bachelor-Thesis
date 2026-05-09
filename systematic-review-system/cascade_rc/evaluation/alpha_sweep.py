@@ -35,6 +35,7 @@ def run_alpha_sweep(
     delta_eta: float = 0.03,
     alpha_values: list[float] = ALPHA_SWEEP,
     output_path: Optional[Path] = None,
+    quantile_scale_base_scores: bool = False,
 ) -> pd.DataFrame:
     """Re-run Algorithm 1 at each alpha in alpha_values for each topic.
 
@@ -65,6 +66,9 @@ def run_alpha_sweep(
                 continue
 
             df = pd.read_parquet(parquet_path)
+            if quantile_scale_base_scores:
+                from cascade_rc.data.score_normalizer import quantile_scale_s
+                df = quantile_scale_s(df)
             df = _ensure_is_split(df)
 
             df_pos = df[(df["is_split"] == 1) & (df["y_abstract"] == 1)]
@@ -302,6 +306,7 @@ def augment_with_baselines(
     artefact_dir: Path,
     data_dir: Path = Path("data/clef_tar"),
     train_dir: Path = Path("artefacts/baselines/rlstop"),
+    quantile_scale_base_scores: bool = False,
 ) -> pd.DataFrame:
     """Add baseline FNR columns to the alpha sweep results DataFrame.
 
@@ -311,7 +316,11 @@ def augment_with_baselines(
     for topic_id in df_sweep["topic_id"].unique():
         p = artefact_dir / "data" / f"{topic_id}.parquet"
         if p.exists():
-            topic_dfs[topic_id] = pd.read_parquet(p)
+            _df = pd.read_parquet(p)
+            if quantile_scale_base_scores:
+                from cascade_rc.data.score_normalizer import quantile_scale_s
+                _df = quantile_scale_s(_df)
+            topic_dfs[topic_id] = _df
 
     autostop_col: list[float] = []
     scrc_t_col: list[float] = []
@@ -433,6 +442,12 @@ def main() -> None:
         "--skip-baselines", action="store_true",
         help="Skip baseline computation (AUTOSTOP, SCRC, RLStop). CASCADE-RC only.",
     )
+    parser.add_argument(
+        "--quantile-scale-base-scores", action="store_true",
+        help="Apply rank-based quantile uniformization to s scores after loading "
+             "(must match the flag used during calibration to keep thresholds and "
+             "test scores in the same coordinate space).",
+    )
     args = parser.parse_args()
 
     # Step 1: Run CASCADE-RC alpha sweep
@@ -443,6 +458,7 @@ def main() -> None:
         delta_eta=args.delta_eta,
         alpha_values=args.alpha_values,
         output_path=None,  # save after augmentation
+        quantile_scale_base_scores=args.quantile_scale_base_scores,
     )
 
     # Step 2: Augment with baseline FNRs
@@ -455,6 +471,7 @@ def main() -> None:
             artefact_dir=args.artefact_dir,
             data_dir=args.data_dir,
             train_dir=args.train_dir,
+            quantile_scale_base_scores=args.quantile_scale_base_scores,
         )
 
     # Step 3: Validate Theorem 5

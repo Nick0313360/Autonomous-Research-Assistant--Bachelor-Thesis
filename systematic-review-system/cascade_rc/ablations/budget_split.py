@@ -96,9 +96,9 @@ def _run_topic(
     artefact_dir.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_parquet(parquet_path)
-    if config.normalize_base_scores:
-        from cascade_rc.data.score_normalizer import minmax_scale_s
-        df = minmax_scale_s(df)
+    if config.quantile_scale_base_scores:
+        from cascade_rc.data.score_normalizer import quantile_scale_s
+        df = quantile_scale_s(df)
     m_plus = int(((df["is_calib"] == 1) & (df["y_abstract"] == 1)).sum())
 
     result = calibrate(topic_id, parquet_path, patched_config, artefact_dir=artefact_dir)

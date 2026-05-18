@@ -1,0 +1,120 @@
+{
+  "title": "Efficacy of Smartphone-Based Mindfulness Applications for Anxiety Reduction in Adolescents",
+  "research_question": "Do unguided smartphone-based mindfulness and meditation applications reduce anxiety symptoms compared to standard care or inactive digital controls in adolescents?",
+  "pico": {
+    "population": "adolescents (ages 12 to 18 years) exhibiting mild to moderate anxiety symptoms, generalized anxiety, or elevated stress levels",
+    "intervention": "unguided, smartphone-based digital health interventions focusing on mindfulness, meditation, or cognitive behavioral therapy (CBT) principles",
+    "comparator": "waitlist control, treatment as usual (TAU), or inactive digital controls (e.g., educational apps, passive tracking apps)",
+    "outcome": "reduction in anxiety symptoms measured by validated psychological scales (e.g., GAD-7, SCAS), user adherence rates, and self-reported well-being",
+    "study_design": "randomized controlled trials (RCTs) and quasi-experimental study designs"
+  },
+  "inclusion_criteria": [
+    {
+      "criterion_id": "IC-01",
+      "text": "Study must focus on adolescent populations strictly between the ages of 12 and 18.",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-02",
+      "text": "Intervention must be delivered primarily via a mobile application (smartphone or tablet) without mandatory real-time human therapist interaction.",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-03",
+      "text": "Study must report quantitative changes in anxiety or stress using validated psychological measurement tools.",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-04",
+      "text": "Study must include a distinct control or comparison group (waitlist, standard care, or placebo app).",
+      "type": "MANDATORY"
+    }
+  ],
+  "exclusion_criteria": [
+    {
+      "criterion_id": "EC-01",
+      "text": "Studies evaluating in-person therapy, telehealth video sessions, or web-based interventions requiring a desktop computer.",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "EC-02",
+      "text": "Populations with severe, clinically diagnosed psychiatric disorders requiring inpatient treatment or pharmacological intervention.",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "EC-03",
+      "text": "Studies involving concurrent pharmacological interventions where the effect of the app cannot be isolated.",
+      "type": "MANDATORY"
+    }
+  ],
+  "target_databases": [
+    "pubmed",
+    "semantic_scholar"
+  ],
+  "max_papers_per_db": 10000,
+  "date_range": [
+    2010,
+    2025
+  ],
+  "language_restrictions": [
+    "en"
+  ]
+}
+
+{
+  "title": "Impact of Sugar-Sweetened Beverage Taxes on Population Obesity and BMI",
+  "research_question": "Do regional or national taxes on sugar-sweetened beverages significantly reduce population-level obesity rates or average Body Mass Index (BMI) compared to jurisdictions without such taxes?",
+  "pico": {
+    "population": "general human populations (children, adolescents, or adults) living in municipalities, regions, or countries where a sugar-sweetened beverage tax has been implemented",
+    "intervention": "implementation of a sugar-sweetened beverage (SSB) tax, soda tax, or sugary drink excise tax",
+    "comparator": "populations in similar jurisdictions without an SSB tax, or the exact same population in the period immediately prior to the tax implementation",
+    "outcome": "changes in the prevalence of obesity, prevalence of overweight status, or changes in mean Body Mass Index (BMI)",
+    "study_design": "natural experiments, interrupted time series (ITS), difference-in-differences (DiD), and large-scale prospective cohort studies"
+  },
+  "inclusion_criteria": [
+    {
+      "criterion_id": "IC-01",
+      "text": "Study must evaluate a legally implemented, real-world tax on sugar-sweetened beverages.",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-02",
+      "text": "Study must report quantitative changes in human anthropometric outcomes (e.g., BMI, body weight, obesity prevalence, or adiposity).",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-03",
+      "text": "Study must use a quasi-experimental, observational cohort, or natural experiment study design with a defined pre-tax and post-tax evaluation period.",
+      "type": "MANDATORY"
+    }
+  ],
+  "exclusion_criteria": [
+    {
+      "criterion_id": "EC-01",
+      "text": "Studies that only measure beverage purchasing behavior, sales volume, or economic impact without measuring actual human weight or health outcomes.",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "EC-02",
+      "text": "Mathematical modeling or simulation studies projecting future health impacts (must be empirical post-implementation data).",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "EC-03",
+      "text": "Clinical weight-loss trials or dietary interventions at the individual level (e.g., counseling someone to stop drinking soda).",
+      "type": "MANDATORY"
+    }
+  ],
+  "target_databases": [
+    "pubmed",
+    "semantic_scholar"
+  ],
+  "max_papers_per_db": 10000,
+  "date_range": [
+    2010,
+    2025
+  ],
+  "language_restrictions": [
+    "en"
+  ]
+}

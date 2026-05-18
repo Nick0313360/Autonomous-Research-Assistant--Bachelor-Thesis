@@ -1,0 +1,24 @@
+<name>/
+├── src/
+│   ├── shared/                    # Shared kernel
+│   │   ├── domain/                # Base entity, value object, aggregate root
+│   │   └── infrastructure/        # Shared infra (logging, events)
+│   ├── bounded-contexts/
+│   │   ├── <context-a>/
+│   │   │   ├── domain/
+│   │   │   │   ├── aggregates/
+│   │   │   │   ├── entities/
+│   │   │   │   ├── value-objects/
+│   │   │   │   ├── events/        # Domain events
+│   │   │   │   ├── repositories/  # Repository interfaces
+│   │   │   │   └── services/      # Domain services
+│   │   │   ├── application/
+│   │   │   │   ├── commands/      # Command handlers
+│   │   │   │   ├── queries/       # Query handlers
+│   │   │   │   └── sagas/         # Process managers
+│   │   │   └── infrastructure/
+│   │   │       ├── persistence/
+│   │   │       └── api/
+│   │   └── <context-b>/
+│   │       └── ...                # Same structure
+│   └── anti-corruption-layer/     # ACL between bounded contexts

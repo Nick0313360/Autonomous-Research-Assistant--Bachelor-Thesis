@@ -1,0 +1,14 @@
+<name>/
+├── src/
+│   ├── producers/                 # Event publishers
+│   ├── consumers/                 # Event subscribers / handlers
+│   ├── events/
+│   │   ├── schemas/               # Event schemas (Avro/JSON Schema)
+│   │   └── registry/              # Schema registry client
+│   ├── sagas/                     # Long-running process orchestrators
+│   ├── projections/               # Read model builders from events
+│   └── infrastructure/
+│       ├── broker/                # Kafka/RabbitMQ/SQS adapter
+│       ├── store/                 # Event store
+│       └── dead-letter/           # DLQ handler
+├── docker-compose.yml             # Includes broker (Kafka/RabbitMQ)

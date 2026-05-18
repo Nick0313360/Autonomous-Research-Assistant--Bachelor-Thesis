@@ -1,6 +1,0 @@
-{
-  "timestamp": "2026-03-16T22:38:46.423675",
-  "query": "(\"systematic review\"[Title/Abstract] OR \"literature review\"[Title/Abstract]) AND (\"machine learning\"[Title/Abstract] OR \"deep learning\"[Title/Abstract] OR NLP[Title/Abstract])",
-  "papers_returned": 1000,
-  "elapsed_seconds": 28.92
-}

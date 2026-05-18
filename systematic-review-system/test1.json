@@ -1,0 +1,34 @@
+{
+  "title": "Mechanical Thrombectomy vs Thrombolysis in Large Vessel Occlusion Stroke",
+  "research_question": "In adults with acute ischemic stroke due to anterior circulation large vessel occlusion, does mechanical endovascular thrombectomy using stent retrievers improve 90-day functional independence compared to intravenous alteplase alone?",
+  "pico": {
+    "population": "adults presenting within 6 hours of symptom onset with acute ischemic stroke due to anterior circulation large vessel occlusion (LVO)",
+    "intervention": "mechanical endovascular thrombectomy using modern stent retrievers or direct aspiration catheters",
+    "comparator": "standard medical therapy utilizing intravenous alteplase (tPA) or tenecteplase alone",
+    "outcome": "functional independence at 90 days defined by a modified Rankin Scale (mRS) score of 0 to 2, and rates of symptomatic intracranial hemorrhage",
+    "study_design": "randomized controlled trials"
+  },
+  "inclusion_criteria": [
+    {
+      "criterion_id": "IC-01",
+      "text": "Study must include patients with confirmed anterior circulation LVO.",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-02",
+      "text": "Intervention must involve mechanical clot retrieval.",
+      "type": "MANDATORY"
+    }
+  ],
+  "exclusion_criteria": [
+    {
+      "criterion_id": "EC-01",
+      "text": "Studies using outdated first-generation devices like the MERCI retriever.",
+      "type": "MANDATORY"
+    }
+  ],
+  "target_databases": ["pubmed", "semantic_scholar"],
+  "max_papers_per_db": 10000,
+  "date_range": [2010, 2025],
+  "language_restrictions": ["en"]
+}

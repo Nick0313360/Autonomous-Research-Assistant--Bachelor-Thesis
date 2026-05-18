@@ -112,8 +112,10 @@ def test_certification_synthetic(tmp_path: Path) -> None:
     assert result.status == "certified"
     assert result.lambda_hat_mask.sum() > 0, "Λ̂ must be non-empty"
 
-    # Reference θ̂ computed 2026-05-01, seed=0, K=20, split_seed=20260429
-    REFERENCE_THETA_HAT = np.array([0.0, 0.0, 0.0])
+    # Reference θ̂ computed 2026-05-12, seed=0, K=20, split_seed=20260429
+    # Updated 2026-05-12: static (data-independent) anchor grid eliminates
+    # data-peeking; global_min_eta≈0.010 → α†≈0.110; Λ̂=4199.
+    REFERENCE_THETA_HAT = np.array([0.4219389639356662, 0.5884308538885089, 0.47368421052631576])
     np.testing.assert_allclose(result.theta_hat, REFERENCE_THETA_HAT, atol=1.0 / 19)
 
 
@@ -156,3 +158,69 @@ def test_resume_from_partial(tmp_path: Path) -> None:
     assert result_resumed.lambda_hat_mask.tobytes() == result_full.lambda_hat_mask.tobytes(), (
         "Resumed Λ̂ differs from full run — checkpointing is broken"
     )
+
+
+# ---------------------------------------------------------------------------
+# test_calibrate_quantile_scale_base_scores
+# ---------------------------------------------------------------------------
+
+def _make_squashed_parquet(tmp_path: Path) -> Path:
+    """Write a synthetic parquet with s ∈ [0.011, 0.032] to tmp_path."""
+    rng = np.random.default_rng(42)
+    n = 300
+    # Three-way split: is_split=0 (60), is_split=1 (150), is_split=2 (90)
+    is_split = np.array([0] * 60 + [1] * 150 + [2] * 90, dtype=np.int8)
+    y = np.zeros(n, dtype=np.int64)
+    # Place 12 positives in split-0, 30 in split-1, 18 in split-2
+    y[:12] = 1
+    y[60:90] = 1
+    y[210:228] = 1
+
+    df = pd.DataFrame({
+        "pmid": [str(i) for i in range(n)],
+        "s": rng.uniform(0.011, 0.032, n),  # squashed range
+        "u": rng.uniform(0.0, 1.0, n),
+        "y_abstract": y,
+        "llm_y_hat": rng.integers(0, 2, n, dtype=np.int64),
+        "is_split": is_split,
+    })
+    path = tmp_path / "CD_synthetic.parquet"
+    df.to_parquet(path, index=False)
+    return path
+
+
+def test_calibrate_config_snapshot_contains_normalize_flag(tmp_path: Path) -> None:
+    """calibrate() persists quantile_scale_base_scores in config_snapshot."""
+    from cascade_rc.calibration.main_calibrate import calibrate
+
+    parquet_path = _make_squashed_parquet(tmp_path)
+
+    cfg = CascadeRCConfig(
+        quantile_scale_base_scores=True,
+        n_jobs_calib=1,
+        ltt=LTTBudget(
+            alpha=0.10,
+            delta_total=0.10,
+            delta_eta=0.03,
+            delta_LTT=0.07,
+            K=3,
+            B=3,
+            ensemble_temperature=0.7,
+            c_human=5.0,
+            c_llm=0.001,
+            delta_bootstrap=0.05,
+        ),
+    )
+
+    result = calibrate(
+        topic_id="CD_synthetic",
+        calib_parquet=parquet_path,
+        config=cfg,
+        artefact_dir=tmp_path,
+    )
+
+    # Must not abstain — we have 30 positives in is_split==1 which exceeds N_min=26
+    assert not isinstance(result, tuple), (
+        f"calibrate() abstained unexpectedly: {result}"
+    )
+    assert result.config_snapshot["quantile_scale_base_scores"] is True

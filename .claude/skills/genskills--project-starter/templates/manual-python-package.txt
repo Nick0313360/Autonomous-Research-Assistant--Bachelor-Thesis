@@ -1,0 +1,13 @@
+<name>/
+├── src/
+│   └── <name_underscore>/
+│       ├── __init__.py
+│       ├── main.py
+│       └── py.typed          # PEP 561 marker
+├── tests/
+│   ├── __init__.py
+│   └── test_main.py
+├── .gitignore
+├── pyproject.toml
+├── README.md
+└── LICENSE

@@ -5,7 +5,7 @@ Drives the iterative literature search pipeline.
 
 Pipeline (per iteration, up to 3)
 ----------------------------------
-1. QueryBuilder.build_initial_queries(protocol)         → List[SearchQuery]
+1. LLMQueryBuilder.build_initial_queries(protocol)      → List[SearchQuery]
 2. DatabaseConnector.execute(query) for each query      → List[CandidateRecord]
 3. Merge all per-query result lists
 4. DeduplicationEngine.deduplicate(merged)              → unique records
@@ -26,7 +26,7 @@ from models.data_classes import CandidateRecord, ReviewProtocol
 from tier1_search.coverage_analyzer import CoverageAnalyzer
 from tier1_search.database_connector import DatabaseConnector
 from tier1_search.deduplication import DeduplicationEngine
-from tier1_search.query_builder import QueryBuilder
+from tier1_search.query_builder import LLMQueryBuilder
 from tier1_search.search_refinement import SearchRefinementAgent
 from infrastructure.prisma_manager import PRISMAManager
 
@@ -49,7 +49,7 @@ class SearchOrchestrator:
 
     def __init__(self, llm_client: Any, review_id: str) -> None:
         self._llm_client          = llm_client
-        self._query_builder       = QueryBuilder()
+        self._query_builder       = LLMQueryBuilder()
         self._db_connector        = DatabaseConnector()
         self._dedup_engine        = DeduplicationEngine()
         self._coverage_analyzer   = CoverageAnalyzer()
@@ -69,7 +69,7 @@ class SearchOrchestrator:
         List[CandidateRecord]
             Deduplicated records ready for abstract screening.
         """
-        queries          = self._query_builder.build_initial_queries(protocol)
+        queries          = await self._query_builder.build_initial_queries(protocol, self._llm_client)
         previous_count   = 0
         all_records: List[CandidateRecord] = []
         total_identified = 0   # cumulative raw records before deduplication

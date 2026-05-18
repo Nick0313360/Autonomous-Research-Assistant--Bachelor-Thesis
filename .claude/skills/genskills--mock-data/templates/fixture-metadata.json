@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "generatedAt": "2025-01-15T10:30:00Z",
+    "seed": 42,
+    "generator": "genskills:mock-data@1.2.0"
+  },
+  "users": [
+    { "id": "usr_001", "email": "alice@example.com", "name": "Alice Chen" }
+  ]
+}

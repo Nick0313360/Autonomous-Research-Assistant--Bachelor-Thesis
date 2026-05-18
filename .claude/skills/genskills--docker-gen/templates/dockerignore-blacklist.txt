@@ -1,0 +1,53 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Dependencies (rebuilt in container)
+node_modules
+vendor
+__pycache__
+*.pyc
+.venv
+target/debug
+
+# IDE / Editor
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Environment / Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Build artifacts (rebuilt in container)
+dist
+build
+.next
+coverage
+.nyc_output
+
+# Docker (avoid recursive context)
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Documentation
+*.md
+LICENSE
+docs/
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.circleci
+
+# Tests (exclude for production builds, include for test target)
+**/*.test.*
+**/*.spec.*
+**/__tests__

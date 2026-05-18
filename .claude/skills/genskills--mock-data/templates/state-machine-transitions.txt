@@ -1,0 +1,17 @@
+Order:    draft -> pending -> paid -> shipped -> delivered
+                                   -> refunded
+                    -> cancelled
+
+User:     invited -> active -> suspended -> deactivated
+                            -> active (reactivation)
+
+Content:  draft -> in_review -> published -> archived
+                             -> rejected -> draft (revision)
+
+Ticket:   open -> in_progress -> waiting_on_customer -> in_progress
+                              -> resolved -> closed
+                                          -> reopened -> in_progress
+
+Subscription: trial -> active -> past_due -> cancelled
+                              -> cancelled
+                    -> expired

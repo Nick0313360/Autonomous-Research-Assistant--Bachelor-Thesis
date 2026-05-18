@@ -5,6 +5,7 @@ import hashlib
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
@@ -14,14 +15,12 @@ import pytest
 
 from cascade_rc.evaluation.figures import (
     _apply_ieee_style,
-    _load_fig1_data,
-    _load_fig2_data,
-    _load_fig3_data,
-    _synthetic_figure1_data,
-    _synthetic_figure2_data,
-    _synthetic_figure3_data,
-    ALPHAS,
-    METHODS,
+    gen_figures,
+    load_autostop_wss_reference,
+    main,
+    plot_budget_split_ablation,
+    plot_operational_cost,
+    plot_risk_validity,
 )
 
 
@@ -35,118 +34,164 @@ def test_ieee_style_sets_serif() -> None:
     assert plt.rcParams["font.family"] == ["serif"]
 
 
-def test_constants_coverage() -> None:
-    assert len(ALPHAS) == 6
-    assert "CASCADE-RC" in METHODS
-    assert len(METHODS) == 5
-
-
-def test_synthetic_fig1_has_all_methods() -> None:
-    rng = np.random.default_rng(0)
-    df = _synthetic_figure1_data(rng)
-    assert set(df["method"].unique()) == set(METHODS)
-
-
-def test_synthetic_fig1_cascade_rc_below_diagonal() -> None:
-    rng = np.random.default_rng(0)
-    df = _synthetic_figure1_data(rng)
-    crc = df[df["method"] == "CASCADE-RC"]
-    assert (crc["fnr"].values <= crc["alpha"].values + 1e-9).all(), \
-        "CASCADE-RC FNR must not exceed alpha (validity guarantee)"
-
-
-def test_synthetic_fig2_has_all_methods() -> None:
-    rng = np.random.default_rng(0)
-    df = _synthetic_figure2_data(rng)
-    assert set(df["method"].unique()) == set(METHODS)
-
-
-def test_synthetic_fig3_fractions_sum_to_one() -> None:
-    rng = np.random.default_rng(0)
-    df = _synthetic_figure3_data(rng)
-    totals = df[["cheap_reject", "auto_include", "llm", "human"]].sum(axis=1)
-    np.testing.assert_allclose(totals.values, 1.0, atol=1e-9)
-
-
-def test_loaders_fall_back_to_synthetic_when_no_parquets(tmp_path: Path) -> None:
-    df1 = _load_fig1_data(tmp_path)
-    assert set(df1["method"].unique()) == set(METHODS)
-
-    df2 = _load_fig2_data(tmp_path)
-    assert set(df2["method"].unique()) == set(METHODS)
-
-    df3 = _load_fig3_data(tmp_path)
-    assert set(df3["alpha"].unique()) == set(ALPHAS)
-
-
-def test_loaders_use_real_autostop_parquet(tmp_path: Path) -> None:
-    baseline_dir = tmp_path / "baselines"
-    baseline_dir.mkdir()
-    rows = [
-        {"method": "autostop", "topic_id": "CD008874",
-         "target_recall": 0.95, "examined": 100,
-         "recall_achieved": 0.97, "wss_95": 0.42,
-         "wss_status": "ok", "peak_rss_kb": float("nan")}
-    ]
-    pd.DataFrame(rows).to_parquet(baseline_dir / "autostop_results.parquet", index=False)
-    df = _load_fig1_data(tmp_path)
-    autostop_rows = df[df["method"] == "AUTOSTOP"]
-    assert len(autostop_rows) >= 1
-    assert float(autostop_rows.iloc[0]["alpha"]) == pytest.approx(0.05)
-
-
-from cascade_rc.evaluation.figures import main, plot_figure1, plot_figure2, plot_figure3
-
-
-def test_plot_figure1_creates_pdf_and_png(tmp_path: Path) -> None:
-    rng = np.random.default_rng(0)
-    df = _synthetic_figure1_data(rng)
-    plot_figure1(df, tmp_path)
-    assert (tmp_path / "figure1_risk_validity.pdf").exists()
-    assert (tmp_path / "figure1_risk_validity.png").exists()
-
-
-def test_plot_figure2_creates_pdf_and_png(tmp_path: Path) -> None:
-    rng = np.random.default_rng(0)
-    df = _synthetic_figure2_data(rng)
-    plot_figure2(df, tmp_path)
-    assert (tmp_path / "figure2_wss_efficiency.pdf").exists()
-    assert (tmp_path / "figure2_wss_efficiency.png").exists()
-
-
-def test_plot_figure3_creates_pdf_and_png(tmp_path: Path) -> None:
-    rng = np.random.default_rng(0)
-    df = _synthetic_figure3_data(rng)
-    plot_figure3(df, tmp_path)
-    assert (tmp_path / "figure3_escalation.pdf").exists()
-    assert (tmp_path / "figure3_escalation.png").exists()
-
-
 def _md5(path: Path) -> str:
     return hashlib.md5(path.read_bytes()).hexdigest()
 
 
-def test_main_produces_six_artefacts(tmp_path: Path) -> None:
-    main(artefact_dir=tmp_path)
-    expected_stems = [
-        "figure1_risk_validity",
-        "figure2_wss_efficiency",
-        "figure3_escalation",
-    ]
+def _minimal_alpha_sweep() -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for topic_id in ("CD008874", "CD012080"):
+        for alpha in (0.01, 0.10, 0.20):
+            rows.append(
+                {
+                    "topic_id": topic_id,
+                    "alpha": alpha,
+                    "status": "certified",
+                    "fnr_test": float(alpha) * 0.5,
+                    "wss_95": 0.4,
+                    "frac_human_review": 0.3,
+                    "scrc_t_fnr": float(alpha) + 0.05,
+                    "scrc_i_fnr": float(alpha) + 0.04,
+                    "autostop_fnr": float(alpha) + 0.06,
+                    "uncalibrated_fnr": 0.0,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _minimal_budget_split() -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for topic_id in ("CD008874", "CD012080"):
+        for de in (0.01, 0.03, 0.07):
+            rows.append(
+                {
+                    "topic_id": topic_id,
+                    "delta_eta": de,
+                    "n_certified": 5,
+                    "slack_ratio": 0.9,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def test_plot_risk_validity_creates_outputs(tmp_path: Path) -> None:
+    plot_risk_validity(_minimal_alpha_sweep(), tmp_path)
+    assert (tmp_path / "fig1_risk_validity.pdf").exists()
+    assert (tmp_path / "fig1_risk_validity.png").exists()
+
+
+def test_plot_operational_cost_creates_outputs(tmp_path: Path) -> None:
+    plot_operational_cost(_minimal_alpha_sweep(), 0.42, tmp_path)
+    assert (tmp_path / "fig2_operational_cost.pdf").exists()
+    assert (tmp_path / "fig2_operational_cost.png").exists()
+
+
+def test_plot_budget_split_ablation_creates_outputs(tmp_path: Path) -> None:
+    plot_budget_split_ablation(_minimal_budget_split(), tmp_path)
+    assert (tmp_path / "fig3_budget_split_ablation.pdf").exists()
+    assert (tmp_path / "fig3_budget_split_ablation.png").exists()
+
+
+def test_gen_figures_with_parquets(tmp_path: Path) -> None:
+    res = tmp_path / "results"
+    res.mkdir(parents=True)
+    abl = tmp_path / "ablations"
+    abl.mkdir(parents=True)
+    auto = tmp_path / "baselines" / "autostop"
+    auto.mkdir(parents=True)
+
+    _minimal_alpha_sweep().to_parquet(res / "alpha_sweep.parquet", index=False)
+    _minimal_budget_split().to_parquet(abl / "budget_split.parquet", index=False)
+    pd.DataFrame(
+        [
+            {
+                "method": "autostop",
+                "topic_id": "CD008874",
+                "target_recall": 0.95,
+                "examined": 100,
+                "recall_achieved": 0.96,
+                "wss_95": 0.41,
+                "wss_status": "ok",
+                "peak_rss_kb": 0,
+            }
+        ]
+    ).to_parquet(auto / "autostop_results.parquet", index=False)
+
+    gen_figures(artefact_dir=tmp_path)
     fig_dir = tmp_path / "figures"
-    for stem in expected_stems:
+    for stem in (
+        "fig1_risk_validity",
+        "fig2_operational_cost",
+        "fig3_budget_split_ablation",
+    ):
         assert (fig_dir / f"{stem}.pdf").exists(), f"{stem}.pdf missing"
         assert (fig_dir / f"{stem}.png").exists(), f"{stem}.png missing"
 
 
-def test_main_is_deterministic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_alias_calls_gen_figures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    called: dict[str, Path | None] = {"path": None}
+
+    def _stub(path: Path) -> None:
+        called["path"] = path
+
+    monkeypatch.setattr("cascade_rc.evaluation.figures.gen_figures", _stub)
+    main(artefact_dir=tmp_path)
+    assert called["path"] == tmp_path
+
+
+def test_gen_figures_is_png_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("PYTHONHASHSEED", "0")
-    out1 = tmp_path / "run1"
-    out2 = tmp_path / "run2"
-    main(artefact_dir=out1)
-    main(artefact_dir=out2)
-    for stem in ["figure1_risk_validity", "figure2_wss_efficiency", "figure3_escalation"]:
-        for ext in ["png"]:  # PNG is byte-deterministic; PDF may differ in metadata
-            p1 = out1 / "figures" / f"{stem}.{ext}"
-            p2 = out2 / "figures" / f"{stem}.{ext}"
-            assert _md5(p1) == _md5(p2), f"{stem}.{ext} is not deterministic"
+    for name in ("run1", "run2"):
+        root = tmp_path / name
+        res = root / "results"
+        res.mkdir(parents=True)
+        abl = root / "ablations"
+        abl.mkdir(parents=True)
+        auto = root / "baselines" / "autostop"
+        auto.mkdir(parents=True)
+        _minimal_alpha_sweep().to_parquet(res / "alpha_sweep.parquet", index=False)
+        _minimal_budget_split().to_parquet(abl / "budget_split.parquet", index=False)
+        pd.DataFrame(
+            [
+                {
+                    "method": "autostop",
+                    "topic_id": "CD008874",
+                    "target_recall": 0.95,
+                    "wss_95": 0.42,
+                }
+            ]
+        ).to_parquet(auto / "autostop_results.parquet", index=False)
+        gen_figures(artefact_dir=root)
+
+    for stem in (
+        "fig1_risk_validity",
+        "fig2_operational_cost",
+        "fig3_budget_split_ablation",
+    ):
+        p1 = tmp_path / "run1" / "figures" / f"{stem}.png"
+        p2 = tmp_path / "run2" / "figures" / f"{stem}.png"
+        assert _md5(p1) == _md5(p2), f"{stem}.png not deterministic"
+
+
+def test_load_autostop_wss_reference(tmp_path: Path) -> None:
+    auto = tmp_path / "baselines" / "autostop"
+    auto.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "method": "autostop",
+                "topic_id": "A",
+                "target_recall": 0.95,
+                "wss_95": 0.5,
+            },
+            {
+                "method": "autostop",
+                "topic_id": "B",
+                "target_recall": 0.95,
+                "wss_95": 0.7,
+            },
+        ]
+    ).to_parquet(auto / "autostop_results.parquet", index=False)
+    assert load_autostop_wss_reference(tmp_path) == pytest.approx(0.6)

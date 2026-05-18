@@ -38,13 +38,54 @@ def _build_s2_query(query) -> str:
     """
     Convert a SearchQuery into a Semantic Scholar query string.
 
-    S2 bulk endpoint uses simple keyword matching (no field qualifiers).
-    Join distinct keywords with spaces; fall back to research_question.
+    If query.s2_query_override is set (populated by LLMQueryBuilder), it is
+    returned directly — this is the preferred path because the LLM selects only
+    3–5 individual keywords with no quotes or Boolean operators.
+
+    Rule-based fallback:
+    S2 bulk endpoint treats every space-separated word as a required AND term.
+    We therefore use only the 3–5 most specific individual keywords from the
+    intervention field, falling back to domain_keywords.
     """
+    if query.s2_query_override:
+        return query.s2_query_override
+
+    from tier1_search.query_builder import _extract_phrases
+
     keywords = list(dict.fromkeys(kw.strip() for kw in query.domain_keywords if kw.strip()))
-    if keywords:
-        return " ".join(keywords)
-    return query.research_question.strip()
+    if not keywords:
+        return query.research_question.strip()
+
+    _MAX = 5
+
+    from tier1_search.query_builder import _STOPWORDS
+
+    def _content_words(text: str) -> list[str]:
+        return [
+            w for w in text.split()
+            if w.lower() not in _STOPWORDS and len(w) >= 3
+        ]
+
+    if query.intervention:
+        int_phrases = _extract_phrases(query.intervention)
+        if int_phrases:
+            words: list[str] = []
+            for phrase in int_phrases:
+                words.extend(_content_words(phrase))
+                if len(words) >= _MAX:
+                    break
+            words = list(dict.fromkeys(words[:_MAX]))
+            if words:
+                return " ".join(words)
+
+    # Fallback: content words from top domain_keywords
+    words = []
+    for kw in sorted(keywords, key=lambda k: len(k.split()), reverse=True):
+        words.extend(_content_words(kw))
+        if len(words) >= _MAX:
+            break
+    words = list(dict.fromkeys(words[:_MAX]))
+    return " ".join(words) if words else query.research_question.strip()
 
 
 class SemanticScholarConnector:

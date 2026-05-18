@@ -1,0 +1,39 @@
+{
+  // Core settings
+  "defaultLocale": "en",                    // Default/source locale
+  "locales": ["en", "es", "fr", "de", "ar", "ja"],  // All supported locales
+  "keyNamingConvention": "dot-notation",    // "dot-notation" | "flat" | "nested"
+  "translationFormat": "json",              // "json" | "yaml" | "ts" | "po" | "xliff" | "arb"
+  "translationDir": "locales",             // Relative path to translation files
+  "ignorePaths": ["node_modules", "dist"], // Paths to skip when extracting strings
+
+  // Namespace settings
+  "namespaceStrategy": "file-per-feature",  // "single-file" | "file-per-feature" | "nested-keys"
+  "sharedNamespace": "common",              // Namespace for shared/global strings
+  "lazyLoadNamespaces": true,               // Whether to set up lazy loading
+
+  // Validation settings
+  "requiredCoverage": 95,                   // Minimum translation coverage % to pass CI
+  "allowHtmlInTranslations": false,         // Whether to allow HTML tags in translation values
+  "enforceGlossary": true,                  // Whether to enforce terminology consistency
+  "glossaryPath": "glossary.json",          // Path to glossary file
+
+  // Extraction settings
+  "extractCategories": true,                // Tag extracted strings with their category
+  "extractAccessibilityLabels": true,       // Include aria-label, alt, title in extraction
+  "extractMetadata": true,                  // Include SEO titles, meta descriptions
+
+  // RTL settings
+  "rtlLocales": ["ar", "he", "fa", "ur"],  // RTL locales in use
+  "enforceCSSLogicalProperties": true,      // Flag physical CSS properties as warnings
+
+  // Export/import settings
+  "exportFormat": "xliff",                  // Default export format for translator handoff
+  "machineTranslatePlaceholders": false,    // Generate MT placeholders on export
+  "backupOnImport": true,                   // Back up files before importing translations
+
+  // SSR/SSG settings
+  "urlStrategy": "path-prefix",            // "path-prefix" | "subdomain" | "query-param"
+  "generateHreflang": true,                // Auto-generate hreflang tags
+  "generateSitemap": true                  // Include locale variants in sitemap
+}

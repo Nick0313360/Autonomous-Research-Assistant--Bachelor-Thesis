@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "team-slug"
+    labels:
+      - "dependencies"
+    groups:
+      tooling:
+        patterns:
+          - "eslint*"
+          - "prettier*"
+          - "typescript*"
+      testing:
+        patterns:
+          - "vitest*"
+          - "@testing-library/*"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

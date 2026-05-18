@@ -99,6 +99,61 @@ def load_calibrator(path: Path) -> CalibratorBundle:
     return CalibratorBundle(joblib.load(path))
 
 
+def train_calibrator(df: pd.DataFrame, artefact_dir: Path, topic_id: str) -> pd.DataFrame:
+    """
+    Fit Platt/Isotonic ONLY on the score_calib split (is_split==0).
+    Apply the fitted calibrator to ALL rows to produce column 's'.
+
+    Strict split discipline:
+      - TRAIN on is_split==0 only
+      - APPLY to all rows (is_split in {0, 1, 2}) — this is a fixed transformation,
+        not fitting, so it does not violate exchangeability for is_split==1 and 2.
+    """
+    from sklearn.model_selection import train_test_split as tts
+
+    assert "is_split" in df.columns, (
+        "DataFrame must have 'is_split' column from three_way_split(). "
+        "Run splits.three_way_split() before train_calibrator()."
+    )
+
+    train_data = df[df["is_split"] == 0].copy()
+    assert len(train_data) > 0, (
+        "score_calib split (is_split==0) is empty — check three_way_split() fractions."
+    )
+
+    m_plus_train = int(train_data["y_abstract"].sum())
+    print(f"  Training calibrator on {len(train_data)} rows, m+={m_plus_train}")
+
+    X_all = train_data["s_raw"].values.astype(np.float64)
+    y_all = train_data["y_abstract"].values.astype(int)
+
+    X_tr, X_val, y_tr, y_val = tts(
+        X_all, y_all, test_size=0.20, stratify=y_all, random_state=42
+    )
+
+    bundle_dict = fit_calibrators(X_tr, y_tr, X_val, y_val)
+    chosen = bundle_dict["chosen"]
+    nll_iso = bundle_dict["metadata"]["nll_isotonic"]
+    nll_platt = bundle_dict["metadata"]["nll_platt"]
+    print(f"  Calibrator chosen: {chosen} (iso_nll={nll_iso:.4f}, platt_nll={nll_platt:.4f})")
+
+    # Apply to ALL rows — fixed transformation, not a fit
+    bundle = CalibratorBundle(bundle_dict)
+    df = df.copy()
+    df["s"] = bundle.predict(df["s_raw"].values.astype(np.float64))
+
+    pkl_path = Path(artefact_dir) / "calibrators" / f"{topic_id}.pkl"
+    pkl_path.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump({
+        **bundle_dict,
+        "n_score_calib": len(train_data),
+        "m_plus_score_calib": m_plus_train,
+    }, pkl_path)
+    print(f"  Calibrator saved to {pkl_path}")
+
+    return df
+
+
 def fit_calibrators(
     x_train: np.ndarray,
     y_train: np.ndarray,
@@ -249,6 +304,27 @@ def apply_platt(calibrator: PlattCalibrator, raw_scores: np.ndarray) -> np.ndarr
     """
     X = raw_scores.reshape(-1, 1)
     return calibrator.predict_proba(X)[:, 1].astype(np.float32)
+
+
+def quantile_scale_s(df: pd.DataFrame) -> pd.DataFrame:
+    """Rank-based quantile uniformization of the 's' column to (0, 1].
+
+    Maps each score to its percentile rank computed over ALL rows before any
+    split filter is applied, so every stratum shares the same coordinate system.
+    Immune to outliers: a single BM25 misfire at 0.99 cannot compress the rest
+    of the distribution. Rank preservation is guaranteed by construction.
+    No-op when all scores are identical (avoids degenerate uniform output).
+    """
+    s_min = float(df["s"].min())
+    s_max = float(df["s"].max())
+    if s_max > s_min:
+        df = df.copy()
+        df["s"] = df["s"].rank(method="min", pct=True)
+        logger.debug(
+            "Applied quantile uniformization to s-scores. Original range: [%.4f, %.4f].",
+            s_min, s_max,
+        )
+    return df
 
 
 # ---------------------------------------------------------------------------

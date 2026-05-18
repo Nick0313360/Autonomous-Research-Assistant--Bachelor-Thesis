@@ -7,7 +7,11 @@ import pandas as pd
 from joblib import Parallel, delayed
 
 from cascade_rc.config import CascadeRCConfig, LTTBudget
-from cascade_rc.evaluation.metrics import wss_at_recall
+from cascade_rc.evaluation.metrics import (
+    bootstrap_eta_upper,
+    slack_ratio_diagnostic,
+    wss_at_recall,
+)
 
 HEADLINE_DTA_TOPICS: list[str] = ["CD008874", "CD012080", "CD012768"]
 
@@ -30,6 +34,7 @@ PARQUET_SCHEMA: dict[str, str] = {
     "achieved_recall": "float64",
     "n_certified": "int64",
     "mean_eta_lcb": "float64",
+    "slack_ratio": "float64",
     "theta_hat_lambda_lo": "float64",
     "theta_hat_lambda_hi": "float64",
     "theta_hat_tau_se": "float64",
@@ -91,6 +96,9 @@ def _run_topic(
     artefact_dir.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_parquet(parquet_path)
+    if config.quantile_scale_base_scores:
+        from cascade_rc.data.score_normalizer import quantile_scale_s
+        df = quantile_scale_s(df)
     m_plus = int(((df["is_calib"] == 1) & (df["y_abstract"] == 1)).sum())
 
     result = calibrate(topic_id, parquet_path, patched_config, artefact_dir=artefact_dir)
@@ -107,6 +115,7 @@ def _run_topic(
             "achieved_recall": float("nan"),
             "n_certified": 0,
             "mean_eta_lcb": float("nan"),
+            "slack_ratio": float("nan"),
             "theta_hat_lambda_lo": float("nan"),
             "theta_hat_lambda_hi": float("nan"),
             "theta_hat_tau_se": float("nan"),
@@ -115,6 +124,15 @@ def _run_topic(
 
     wss_dict = _compute_wss(result, df)
     theta_idx = _find_theta_hat_idx(result)
+
+    eta_boot = bootstrap_eta_upper(
+        result.slack_mat,  # type: ignore[union-attr]
+        delta=patched_config.ltt.delta_bootstrap,
+        B=1000,
+        seed=0,
+    )
+    ratio = slack_ratio_diagnostic(result.eta_lcb_grid, eta_boot)  # type: ignore[union-attr]
+    slack_ratio_mean = float(np.nanmean(ratio))
 
     return {
         "delta_eta": delta_eta,
@@ -127,6 +145,7 @@ def _run_topic(
         "achieved_recall": wss_dict["achieved_recall"],
         "n_certified": int(result.lambda_hat_mask.sum()),  # type: ignore[union-attr]
         "mean_eta_lcb": float(np.mean(result.eta_lcb_grid)),  # type: ignore[union-attr]
+        "slack_ratio": slack_ratio_mean,
         "theta_hat_lambda_lo": float(result.theta_hat[0]),  # type: ignore[union-attr]
         "theta_hat_lambda_hi": float(result.theta_hat[1]),  # type: ignore[union-attr]
         "theta_hat_tau_se": float(result.theta_hat[2]),  # type: ignore[union-attr]
@@ -209,6 +228,7 @@ def run_sweep(
     topics_filter: list[str] | None = None,
     n_jobs: int = 1,
     dry_run: bool = False,
+    delta_eta_values: list[float] | None = None,
 ) -> pd.DataFrame:
     data_dir = Path(data_dir)
     out_dir = Path(out_dir)
@@ -219,6 +239,11 @@ def run_sweep(
         df_empty.to_parquet(out_dir / "budget_split.parquet", index=False)
         return df_empty
 
+    if delta_eta_values is not None:
+        splits = [(de, round(0.10 - de, 4)) for de in sorted(delta_eta_values)]
+    else:
+        splits = BUDGET_SPLITS
+
     topics = topics_filter if topics_filter is not None else HEADLINE_DTA_TOPICS
     parquet_paths = {p.stem: p for p in sorted(data_dir.glob("*.parquet"))}
     available = [t for t in topics if t in parquet_paths]
@@ -228,7 +253,7 @@ def run_sweep(
     tasks = [
         (topic_id, parquet_paths[topic_id], delta_eta, delta_ltt, config, out_dir)
         for topic_id in available
-        for delta_eta, delta_ltt in BUDGET_SPLITS
+        for delta_eta, delta_ltt in splits
     ]
 
     results: list[dict] = Parallel(n_jobs=n_jobs, backend="loky")(
@@ -268,18 +293,31 @@ def main() -> None:
     )
     parser.add_argument("--n-jobs", type=int, default=1)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--delta-eta-values", nargs="+", type=float, default=None, metavar="DELTA_ETA",
+        help="δ_η values to sweep (delta_ltt = 0.10 - delta_eta). "
+             "Default: BUDGET_SPLITS constant.",
+    )
+    parser.add_argument(
+        "--output", type=Path, default=None,
+        help="Exact output path for the result parquet "
+             "(overrides --out-dir / budget_split.parquet).",
+    )
     args = parser.parse_args()
+
+    effective_out_dir = args.output.parent if args.output is not None else args.out_dir
 
     df = run_sweep(
         data_dir=args.data_dir,
-        out_dir=args.out_dir,
+        out_dir=effective_out_dir,
         topics_filter=args.topics,
         n_jobs=args.n_jobs,
         dry_run=args.dry_run,
+        delta_eta_values=args.delta_eta_values,
     )
 
     if args.dry_run:
-        print(f"DRY-RUN: schema written to {args.out_dir / 'budget_split.parquet'}")
+        print(f"DRY-RUN: schema written to {effective_out_dir / 'budget_split.parquet'}")
     else:
         print(f"Sweep complete: {len(df)} rows, {df['topic_id'].nunique()} topics")
     sys.exit(0)

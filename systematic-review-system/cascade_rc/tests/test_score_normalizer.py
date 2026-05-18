@@ -137,3 +137,72 @@ def test_calibrator_predict_empty_input() -> None:
     assert isinstance(result, np.ndarray), f"Expected np.ndarray, got {type(result)}"
     assert result.shape == (0,), f"Expected shape (0,), got {result.shape}"
     assert result.dtype == np.float64, f"Expected float64, got {result.dtype}"
+
+
+# ---------------------------------------------------------------------------
+# test_quantile_scale_s
+# ---------------------------------------------------------------------------
+
+import pandas as pd
+
+
+def test_quantile_scale_s_squashed_range() -> None:
+    """Squashed range [0.011, 0.032] is uniformized to percentile ranks in (0, 1]."""
+    from cascade_rc.data.score_normalizer import quantile_scale_s
+
+    rng = np.random.default_rng(0)
+    n = 200
+    s_raw = rng.uniform(0.011, 0.032, n)
+    df = pd.DataFrame({"s": s_raw, "y_abstract": rng.integers(0, 2, n)})
+    df_scaled = quantile_scale_s(df)
+
+    assert df_scaled is not df, "Must return a copy, not mutate in-place"
+    # quantile min is 1/n (smallest rank / n), max is always 1.0
+    assert float(df_scaled["s"].min()) == pytest.approx(1 / n, abs=1e-9)
+    assert float(df_scaled["s"].max()) == pytest.approx(1.0, abs=1e-12)
+    # rank preservation: Spearman = 1.0
+    from scipy.stats import spearmanr
+    rho, _ = spearmanr(df["s"].values, df_scaled["s"].values)
+    assert rho == pytest.approx(1.0, abs=1e-10)
+
+
+def test_quantile_scale_s_idempotent() -> None:
+    """Scaling twice is idempotent: percentile ranks of uniform ranks are identical."""
+    from cascade_rc.data.score_normalizer import quantile_scale_s
+
+    rng = np.random.default_rng(1)
+    s_raw = rng.uniform(0.011, 0.032, 100)
+    df = pd.DataFrame({"s": s_raw})
+    df_once = quantile_scale_s(df)
+    df_twice = quantile_scale_s(df_once)
+    np.testing.assert_allclose(df_twice["s"].values, df_once["s"].values, atol=1e-12)
+
+
+def test_quantile_scale_s_constant_noop() -> None:
+    """Constant s column (s_min == s_max) returns the dataframe unchanged."""
+    from cascade_rc.data.score_normalizer import quantile_scale_s
+
+    df = pd.DataFrame({"s": [0.02] * 50})
+    df_out = quantile_scale_s(df)
+    assert not df_out["s"].isna().any()
+    np.testing.assert_array_equal(df_out["s"].values, df["s"].values)
+
+
+# ---------------------------------------------------------------------------
+# test_quantile_scale_base_scores_config_flag
+# ---------------------------------------------------------------------------
+
+def test_config_quantile_scale_base_scores_defaults_false() -> None:
+    """CascadeRCConfig.quantile_scale_base_scores defaults to False."""
+    from cascade_rc.config import CascadeRCConfig
+
+    cfg = CascadeRCConfig()
+    assert cfg.quantile_scale_base_scores is False
+
+
+def test_config_quantile_scale_base_scores_can_be_set_true() -> None:
+    """CascadeRCConfig.quantile_scale_base_scores can be set to True."""
+    from cascade_rc.config import CascadeRCConfig
+
+    cfg = CascadeRCConfig(quantile_scale_base_scores=True)
+    assert cfg.quantile_scale_base_scores is True

@@ -13,7 +13,8 @@ class LTTBudget(BaseModel):
     delta_total: float = 0.10
     delta_eta: float = 0.03
     delta_LTT: float = 0.07
-    K: int = 20
+    K: int = 10
+    K_tau: int = 5
     B: int = 5
     ensemble_temperature: float = 0.7
     # documentation only — N_min = ceil(ln(1/delta_LTT) / (-ln(1-alpha)))
@@ -47,7 +48,11 @@ class CascadeRCConfig(BaseSettings):
     ncbi_email: str = ""
     ncbi_api_key: str | None = None
     rrf_k: int = 60
-    prompt_template_version: str = "v1"
+    prompt_template_version: str = "v2_forgiving"
+    llm_endpoint: str = "https://inference.mlmp.ti.bfh.ch/api/v1"
+    n_concurrent: int = 20
+    n_jobs_calib: int = -1     # joblib workers for calibration grid (-1 = all cores)
+    quantile_scale_base_scores: bool = False  # pre-calibration rank-based quantile uniformization of s to [0,1]
 
     model_config = SettingsConfigDict(
         env_prefix="CRC_",

@@ -60,3 +60,40 @@ def walk_reject(
         else:
             break
     return rejected
+
+
+def holm_bonferroni_reject(
+    p_values: np.ndarray,
+    delta_LTT: float,
+) -> np.ndarray:
+    """Holm-Bonferroni step-down procedure over the full calibration grid.
+
+    Unlike the fixed-sequence walk, every grid point is evaluated before
+    any rejection decision is made, making the certified set robust to
+    localised variance bumps in the risk landscape.
+
+    Procedure:
+      1. Sort p-values ascending: p_(1) ≤ p_(2) ≤ … ≤ p_(M).
+      2. Reject H_θ_(i) if p_(i) ≤ δ_LTT / (M − i)  [0-indexed].
+      3. Stop at the first i that fails; all prior indices are certified.
+
+    FWER control: each step uses a Bonferroni threshold that accounts only
+    for the hypotheses not yet rejected, giving strictly more power than a
+    flat Bonferroni correction while maintaining FWER ≤ δ_LTT.
+
+    Args:
+        p_values:  (G,) p-values, one per grid point.
+        delta_LTT: FWER budget δ_LTT.
+
+    Returns:
+        (G,) boolean mask; True at certified (rejected) positions.
+    """
+    M = len(p_values)
+    sorted_idx = np.argsort(p_values)   # ascending order: p_(0) ≤ … ≤ p_(M-1)
+    rejected = np.zeros(M, dtype=bool)
+    for i, idx in enumerate(sorted_idx):
+        if p_values[idx] <= delta_LTT / (M - i):   # Holm threshold at step i
+            rejected[idx] = True
+        else:
+            break
+    return rejected

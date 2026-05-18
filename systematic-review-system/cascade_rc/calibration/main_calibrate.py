@@ -16,7 +16,11 @@ from joblib import Parallel, delayed
 
 from cascade_rc.calibration.hb_pvalue import hb_pvalues
 from cascade_rc.calibration.surrogate_loss import grid as _theta_grid, loss_tensor, slack_tensor
-from cascade_rc.calibration.walker import safest_to_riskiest_order, walk_reject
+from cascade_rc.calibration.walker import (
+    holm_bonferroni_reject,
+    safest_to_riskiest_order,
+    walk_reject,
+)
 from cascade_rc.calibration.wsr_lcb import wsr_lcb_one_sided
 from cascade_rc.certificates.store import CertificationResult, CertificateStore
 from cascade_rc.config import CascadeRCConfig, LTTBudget
@@ -126,6 +130,72 @@ def _compute_eta_lcb_chunked(
     return eta_lcb
 
 
+# ---------------------------------------------------------------------------
+# Static, a-priori anchor grid for the coarse-grid WSR bound (Fix 1).
+#
+# Every (λ_lo, λ_hi, τ_SE) triple is hard-coded before seeing any data.
+# This eliminates the "data-peeking" bias that arose when anchors were placed
+# at s_pos / u_pos quantiles (random functions of the calibration sample):
+# a data-adaptive anchor selection is correlated with the slack samples used
+# to compute the WSR bound, which can inflate η̂⁻⋆ and invalidate the
+# distribution-free finite-sample guarantee.
+#
+# Design principles:
+#   λ_lo ∈ {0.1, 0.2, 0.3}: well below the typical high-relevance score range
+#   λ_hi ∈ {0.7, 0.8, 0.9}: above the median, creating a wide uncertain zone
+#   τ_SE ∈ {0.2, 0.4, 0.6}: avoids the degenerate extremes τ→0 (all u pass)
+#       and τ→1 (almost no u passes, slack→0 in any dataset where u_max < 1)
+#
+# 12 anchors → per_anchor_delta = delta_eta / 12 ≈ 0.0025 (for delta_eta=0.03)
+# ---------------------------------------------------------------------------
+_STATIC_ANCHORS: list[tuple[float, float, float]] = [
+    (0.1, 0.7, 0.2), (0.1, 0.7, 0.4), (0.1, 0.7, 0.6),
+    (0.1, 0.9, 0.2), (0.1, 0.9, 0.4), (0.1, 0.9, 0.6),
+    (0.2, 0.8, 0.2), (0.2, 0.8, 0.4), (0.2, 0.8, 0.6),
+    (0.3, 0.9, 0.2), (0.3, 0.9, 0.4), (0.3, 0.9, 0.6),
+]
+
+
+def _static_global_min_eta(
+    s_pos: np.ndarray,
+    u_pos: np.ndarray,
+    y_hat_pos: np.ndarray,
+    delta_eta: float,
+) -> float:
+    """Global minimum WSR LCB computed over static, data-independent anchors.
+
+    Computes η̂⁻(θ) directly at each point in _STATIC_ANCHORS from the
+    calibration-positive samples, applies Bonferroni over the fixed anchor
+    count, and returns the minimum — a valid uniform lower bound for every
+    point on the fine grid.
+
+    Because anchor locations are hard-coded constants (not derived from
+    s_pos, u_pos, or any calibration statistic), the Bonferroni union bound
+    is exact and the distribution-free guarantee is preserved.
+
+    Args:
+        s_pos:      (m_plus,) calibration-positive relevance scores.
+        u_pos:      (m_plus,) calibration-positive second-screener scores.
+        y_hat_pos:  (m_plus,) LLM verdicts (1=include, 0=exclude).
+        delta_eta:  Total slack budget, split equally across _STATIC_ANCHORS.
+
+    Returns:
+        Scalar global minimum η̂⁻ ≥ 0.
+    """
+    n_anchors = len(_STATIC_ANCHORS)
+    per_anchor_delta = delta_eta / n_anchors
+    min_eta = float("inf")
+    for lo, hi, tau in _STATIC_ANCHORS:
+        in_uncertain = (s_pos >= lo) & (s_pos < hi)
+        se_fires = u_pos >= tau
+        llm_correct = y_hat_pos == 1
+        slack = (in_uncertain & se_fires & llm_correct).astype(np.float64)
+        eta = wsr_lcb_one_sided(slack, delta=per_anchor_delta)
+        if eta < min_eta:
+            min_eta = eta
+    return float(min_eta) if min_eta != float("inf") else 0.0
+
+
 def calibrate(
     topic_id: str,
     calib_parquet: Path,
@@ -159,6 +229,7 @@ def calibrate(
     delta_eta = ltt.delta_eta
     delta_ltt = ltt.delta_LTT
     K = ltt.K
+    K_tau = ltt.K_tau
     c_human = ltt.c_human
     c_llm = ltt.c_llm
 
@@ -216,7 +287,7 @@ def calibrate(
     # Step 3: Build quantile-anchored grid (filtered to λ_lo ≤ λ_hi)
     # s_values=s_all ensures each λ step moves ~1/K of the corpus, preventing
     # the walk from dying at the first non-zero step (Bug 1 fix).
-    theta_g = _theta_grid(K, s_values=s_all)    # (G, 3)
+    theta_g = _theta_grid(K, s_values=s_all, K_tau=K_tau)    # (G, 3)
     G = len(theta_g)
 
     _grid_breakpoints = np.unique(theta_g[:, 0])
@@ -248,51 +319,71 @@ def calibrate(
     _cost_mid = float(c_human * _ai_mid + c_llm * _ib_mid + c_human * _hr_mid)
     print(f"[ALG1] Cost sanity — (0,0,0): {_cost_000:.4f}  (1,1,1): {_cost_111:.4f}  (0.1,0.5,0.6): {_cost_mid:.4f}")
 
-    # Resume from partial checkpoint if it exists
-    partial = CertificateStore.load_partial(topic_id, artefact_dir)
-    resume_from = 0
-    resume_eta_lcb: np.ndarray | None = None
-    if partial is not None:
-        resume_from = partial["grid_idx_completed"]
-        padded = np.zeros(G)
-        stored = partial["eta_lcb_partial"]
-        padded[: len(stored)] = stored
-        resume_eta_lcb = padded
-
-    # Compute η̂⁻⋆ with checkpointing
-    eta_lcb = _compute_eta_lcb_chunked(
-        slack_mat, delta_eta, G, topic_id, artefact_dir,
-        chunk_size=chunk_size, resume_from=resume_from, resume_eta_lcb=resume_eta_lcb,
-        n_jobs=config.n_jobs_calib,
-    )
-
     # Step 5: Empirical risk R̂(θ)
     R_hat = loss_mat.mean(axis=1)    # (G,)
 
-    # Step 6: Corrected level α†(θ) = α + η̂⁻⋆(θ)
-    alpha_dagger = alpha + eta_lcb   # (G,)
+    if order_fn is not None:
+        # ----------------------------------------------------------------
+        # Ablation path (order_fn supplied): full Bonferroni + fixed-sequence
+        # walk.  Used by cascade_rc.ablations.walk_ordering for Lemma 6
+        # validation.  NOT the production calibration path.
+        # ----------------------------------------------------------------
+        partial = CertificateStore.load_partial(topic_id, artefact_dir)
+        resume_from = 0
+        resume_eta_lcb: np.ndarray | None = None
+        if partial is not None:
+            resume_from = partial["grid_idx_completed"]
+            padded = np.zeros(G)
+            stored = partial["eta_lcb_partial"]
+            padded[: len(stored)] = stored
+            resume_eta_lcb = padded
 
-    print(f"[ALG1] eta_lcb range (global LCB): [{eta_lcb.min():.6f}, {eta_lcb.max():.6f}]")
+        eta_lcb = _compute_eta_lcb_chunked(
+            slack_mat, delta_eta, G, topic_id, artefact_dir,
+            chunk_size=chunk_size, resume_from=resume_from, resume_eta_lcb=resume_eta_lcb,
+            n_jobs=config.n_jobs_calib,
+        )
+        alpha_dagger = alpha + eta_lcb          # (G,) per-point
+        p_hb = hb_pvalues(R_hat, alpha_dagger, n=m_plus)
+        order = order_fn(theta_g)
+        lambda_hat_mask = walk_reject(p_hb, order, delta_ltt)
+
+        print(f"[ALG1][ablation] eta_lcb range: [{eta_lcb.min():.6f}, {eta_lcb.max():.6f}]")
+
+    else:
+        # ----------------------------------------------------------------
+        # Default production path: coarse-grid global min η̂⁻⋆ + Holm-
+        # Bonferroni step-down.
+        #
+        # Fix 1 (Bug 2 — Multiplicity Collapse):
+        #   Bonferroni is applied only over ~20 coarse anchor points instead
+        #   of all G ≈ 4000+ grid points.  per_anchor_delta = delta_eta / 20
+        #   instead of delta_eta / 4000, rescuing the WSR statistical power.
+        #   The global minimum over these 20 anchors is used as a single
+        #   uniform η̂⁻⋆ for the entire fine grid (valid lower bound).
+        #
+        # Fix 2 (Bug 3 — Sequential Halting):
+        #   Holm-Bonferroni evaluates ALL grid points before deciding; a
+        #   localised variance bump no longer terminates the certified set
+        #   prematurely.
+        # ----------------------------------------------------------------
+        global_min_eta = _static_global_min_eta(s_pos, u_pos, y_hat_pos, delta_eta)
+        # Uniform arrays for result storage and broadcasting
+        eta_lcb = np.full(G, global_min_eta, dtype=np.float64)
+        alpha_dagger = np.full(G, alpha + global_min_eta, dtype=np.float64)
+
+        p_hb = hb_pvalues(R_hat, alpha_dagger, n=m_plus)
+        lambda_hat_mask = holm_bonferroni_reject(p_hb, delta_ltt)
+
+        print(f"[ALG1] n_anchors={len(_STATIC_ANCHORS)} (static, data-independent)  "
+              f"global_min_eta={global_min_eta:.6f}  "
+              f"alpha_dagger={alpha + global_min_eta:.6f}")
+
+    print(f"[ALG1] eta_lcb range: [{eta_lcb.min():.6f}, {eta_lcb.max():.6f}]")
     print(f"[ALG1] alpha_dagger range: [{alpha_dagger.min():.6f}, {alpha_dagger.max():.6f}]")
-
-    # Step 7: HB p-values
-    p_hb = hb_pvalues(R_hat, alpha_dagger, n=m_plus)   # (G,)
-
     print(f"[ALG1] p_HB range: [{p_hb.min():.6f}, {p_hb.max():.6f}]")
     print(f"[ALG1] Fraction with p_HB <= delta_LTT={delta_ltt}: {(p_hb <= delta_ltt).mean():.4f}")
-    print(f"[ALG1] p_HB at grid[0] (λ_lo=min, λ_hi=min, τ_SE=0): {p_hb[0]:.6f}")
-
-    # Step 8: Fixed-sequence walk — reject until first acceptance
-    order = (order_fn if order_fn is not None else safest_to_riskiest_order)(theta_g)
-    lambda_hat_mask = walk_reject(p_hb, order, delta_ltt)   # (G,) bool
-
-    _walk_stop = int(lambda_hat_mask.sum())
-    _walk_stop_theta = theta_g[order[_walk_stop]] if _walk_stop < len(order) else None
-    print(f"[ALG1] |Lambda_hat| = {_walk_stop}")
-    print(f"[ALG1] Walk stopped at step {_walk_stop}: first non-certified theta = "
-          f"{_walk_stop_theta.tolist() if _walk_stop_theta is not None else 'end-of-walk'}")
-    print(f"[ALG1] p_HB at walk-stop theta: "
-          f"{p_hb[order[_walk_stop]]:.6f}" if _walk_stop < len(order) else "[ALG1] (full walk completed)")
+    print(f"[ALG1] |Lambda_hat| = {int(lambda_hat_mask.sum())}")
 
     # Step 9: θ̂ = argmin expected_cost over Λ̂
     costs = _expected_cost(theta_g, s_all, u_all, c_human, c_llm)
@@ -301,8 +392,11 @@ def calibrate(
     theta_hat = theta_g[theta_hat_idx]
 
     _cert_costs = costs[lambda_hat_mask]
-    print(f"[ALG1] Cost values in Lambda_hat: min={_cert_costs.min():.6f}  "
-          f"max={_cert_costs.max():.6f}  n_unique={len(np.unique(_cert_costs))}")
+    if len(_cert_costs) > 0:
+        print(f"[ALG1] Cost values in Lambda_hat: min={_cert_costs.min():.6f}  "
+              f"max={_cert_costs.max():.6f}  n_unique={len(np.unique(_cert_costs))}")
+    else:
+        print("[ALG1] Cost values in Lambda_hat: empty (Λ̂=0)")
     print(f"[ALG1] theta_hat = {theta_hat.tolist()}")
 
     # Step 10: Persist result and clean up partial

@@ -112,9 +112,10 @@ def test_certification_synthetic(tmp_path: Path) -> None:
     assert result.status == "certified"
     assert result.lambda_hat_mask.sum() > 0, "Λ̂ must be non-empty"
 
-    # Reference θ̂ computed 2026-05-01, seed=0, K=20, split_seed=20260429
-    # Updated 2026-05-08: corrected cost function now includes auto-include overhead
-    REFERENCE_THETA_HAT = np.array([0.0, 0.5884308538885089, 0.0])
+    # Reference θ̂ computed 2026-05-12, seed=0, K=20, split_seed=20260429
+    # Updated 2026-05-12: static (data-independent) anchor grid eliminates
+    # data-peeking; global_min_eta≈0.010 → α†≈0.110; Λ̂=4199.
+    REFERENCE_THETA_HAT = np.array([0.4219389639356662, 0.5884308538885089, 0.47368421052631576])
     np.testing.assert_allclose(result.theta_hat, REFERENCE_THETA_HAT, atol=1.0 / 19)
 
 

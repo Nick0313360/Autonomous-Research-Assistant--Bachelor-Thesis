@@ -30,11 +30,11 @@ def breakpoints(K: int, s_values: np.ndarray | None = None) -> np.ndarray:
     return np.linspace(0.0, 1.0, K)
 
 
-def grid(K: int, s_values: np.ndarray | None = None) -> np.ndarray:
+def grid(K: int, s_values: np.ndarray | None = None, K_tau: int | None = None) -> np.ndarray:
     """Return a grid on [0,1]^3 with λ_lo ≤ λ_hi enforced.
 
     Args:
-        K:        Number of breakpoints per dimension.
+        K:        Number of breakpoints for λ_lo and λ_hi dimensions.
         s_values: Optional 1-D array of s-scores (e.g. all calibration docs).
                   When provided, λ_lo and λ_hi breakpoints are taken from the
                   K evenly-spaced quantiles of s_values so that each step moves
@@ -44,13 +44,16 @@ def grid(K: int, s_values: np.ndarray | None = None) -> np.ndarray:
                   on [0, 1] for backward compatibility.
                   NOTE: τ_SE is traversed DESC in the S→R walk (τ_SE=1.0 is
                   the safe corner; τ_SE=0.0 is the risky corner).
+        K_tau:    Number of breakpoints for τ_SE dimension. Defaults to K when
+                  None. Set smaller than K (e.g. 5) to reduce total grid size
+                  from K^3 to K^2 * K_tau without sacrificing λ resolution.
 
     Returns:
         Array of shape (G, 3) where each row is (λ_lo, λ_hi, τ_SE)
-        and G ≤ K^3 (rows violating λ_lo > λ_hi are dropped).
+        and G ≤ K^2 * K_tau (rows violating λ_lo > λ_hi are dropped).
     """
     lo_vals = hi_vals = breakpoints(K, s_values)
-    tau_vals = np.linspace(0.0, 1.0, K)
+    tau_vals = np.linspace(0.0, 1.0, K_tau if K_tau is not None else K)
     lo, hi, tau = np.meshgrid(lo_vals, hi_vals, tau_vals, indexing="ij")
     points = np.stack([lo.ravel(), hi.ravel(), tau.ravel()], axis=1)
     mask = points[:, 0] <= points[:, 1]

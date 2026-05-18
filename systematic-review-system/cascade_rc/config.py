@@ -13,7 +13,8 @@ class LTTBudget(BaseModel):
     delta_total: float = 0.10
     delta_eta: float = 0.03
     delta_LTT: float = 0.07
-    K: int = 20
+    K: int = 10
+    K_tau: int = 5
     B: int = 5
     ensemble_temperature: float = 0.7
     # documentation only — N_min = ceil(ln(1/delta_LTT) / (-ln(1-alpha)))

@@ -3,13 +3,12 @@ infrastructure/llm_client.py
 ============================
 Single gateway for all LLM calls in the systematic review system.
 
-Supports two backends:
-  - gpt-oss:120b   (PRIMARY)  — OpenAI-compatible endpoint
-  - claude-sonnet-4-6 (SECONDARY) — Anthropic API
+All calls route to gpt:oss120b via the BFH inference server
+(OpenAI-compatible endpoint at https://inference.mlmp.ti.bfh.ch/api/v1).
 
 Usage:
     client = LLMClient()
-    response = await client.complete(prompt="...", system="...", model=LLMClient.CLAUDE_MODEL)
+    response = await client.complete(prompt="...", system="...")
     responses = await client.complete_batch(prompts=[...], system="...", model=LLMClient.GPT_MODEL)
 """
 from __future__ import annotations
@@ -22,7 +21,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
-import anthropic
 import httpx
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -60,16 +58,11 @@ class LLMClient:
     """Async LLM client with retry, logging, and optional JSON parsing."""
 
     GPT_MODEL = "gpt-oss:120b"
-    CLAUDE_MODEL = "claude-sonnet-4-6"
 
     def __init__(self) -> None:
         self._http = httpx.AsyncClient(
-            limits=httpx.Limits(max_connections=15, max_keepalive_connections=15),
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=30),
             timeout=httpx.Timeout(60.0),
-        )
-        self._anthropic = anthropic.AsyncAnthropic(
-            api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-            http_client=self._http,
         )
         self._openai = AsyncOpenAI(
             base_url=os.getenv(
@@ -91,7 +84,7 @@ class LLMClient:
         self,
         prompt: str,
         system: str,
-        model: str = CLAUDE_MODEL,
+        model: str = GPT_MODEL,
         temperature: float = 0.0,
         max_tokens: int = 1024,
         response_format: str = "json",
@@ -102,7 +95,7 @@ class LLMClient:
         Args:
             prompt:          User message.
             system:          System prompt.
-            model:           One of LLMClient.GPT_MODEL or LLMClient.CLAUDE_MODEL.
+            model:           Model name — must be LLMClient.GPT_MODEL.
             temperature:     Sampling temperature (default 0.0 for determinism).
             max_tokens:      Maximum tokens in the completion.
             response_format: "json" (attempt to parse) or "text" (return raw).
@@ -137,7 +130,7 @@ class LLMClient:
         prompts: List[str],
         system: str,
         model: str,
-        max_concurrency: int = 10,
+        max_concurrency: int = 25,
     ) -> List[LLMResponse]:
         """
         Run a list of prompts concurrently, bounded by max_concurrency.
@@ -173,14 +166,14 @@ class LLMClient:
     ) -> LLMResponse:
         t0 = time.monotonic()
 
-        if model == self.GPT_MODEL:
-            content, input_tokens, output_tokens = await self._call_openai(
-                prompt, system, model, temperature, max_tokens
+        if model != self.GPT_MODEL:
+            raise ValueError(
+                f"LLMClient: unsupported model {model!r}. "
+                f"Only {self.GPT_MODEL!r} (BFH inference) is permitted."
             )
-        else:
-            content, input_tokens, output_tokens = await self._call_anthropic(
-                prompt, system, model, temperature, max_tokens
-            )
+        content, input_tokens, output_tokens = await self._call_openai(
+            prompt, system, model, temperature, max_tokens
+        )
 
         latency_ms = (time.monotonic() - t0) * 1000
 
@@ -200,27 +193,6 @@ class LLMClient:
             latency_ms=latency_ms,
             parsed_json=parsed,
         )
-
-    async def _call_anthropic(
-        self,
-        prompt: str,
-        system: str,
-        model: str,
-        temperature: float,
-        max_tokens: int,
-    ) -> tuple[str, int, int]:
-        response = await self._anthropic.messages.create(
-            model=model,
-            system=system,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        content = next(
-            (block.text for block in response.content if block.type == "text"),
-            "",
-        )
-        return content, response.usage.input_tokens, response.usage.output_tokens
 
     async def _call_openai(
         self,
@@ -252,13 +224,8 @@ class LLMClient:
 
 def _is_retryable(exc: Exception) -> bool:
     """Return True for rate-limit and transient server errors."""
-    if isinstance(exc, anthropic.RateLimitError):
-        return True
     if isinstance(exc, OpenAIRateLimitError):
         return True
-    if isinstance(exc, anthropic.APIStatusError) and exc.status_code >= 500:
-        return True
-    # openai wraps 5xx in APIStatusError too
     if (
         hasattr(exc, "status_code")
         and isinstance(getattr(exc, "status_code", None), int)
@@ -308,7 +275,7 @@ if __name__ == "__main__":
 
     async def _smoke() -> None:
         client = LLMClient()
-        model = os.getenv("SMOKE_MODEL", LLMClient.CLAUDE_MODEL)
+        model = os.getenv("SMOKE_MODEL", LLMClient.GPT_MODEL)
         print(f"Smoke-testing with model: {model}")
 
         try:

@@ -135,14 +135,15 @@ class QueryBuilder:
             year_range = protocol.date_range
 
         query = SearchQuery(
-            research_question = protocol.research_question,
-            population        = pico.population,
-            intervention      = pico.intervention,
-            outcome           = pico.outcome,
-            comparison        = pico.comparator,
-            domain_keywords   = keywords,
-            year_range        = year_range,
-            max_papers_per_db = protocol.max_papers_per_db,
+            research_question     = protocol.research_question,
+            population            = pico.population,
+            intervention          = pico.intervention,
+            outcome               = pico.outcome,
+            comparison            = pico.comparator,
+            domain_keywords       = keywords,
+            year_range            = year_range,
+            max_papers_per_db     = protocol.max_papers_per_db,
+            pubmed_query_override = getattr(protocol, "pubmed_query_override", None),
         )
         return [query]
 

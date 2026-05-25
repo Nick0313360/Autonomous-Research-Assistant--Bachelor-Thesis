@@ -126,6 +126,19 @@ class PRISMAReporter:
         md_path = self._output_dir / "prisma_flow.md"
         md_path.write_text(md, encoding="utf-8")
 
+        from tier3_quality.prisma_visual import render_prisma_svg
+        svg_content = render_prisma_svg(c, c.get("exclusion_reasons", {}))
+        svg_path = self._output_dir / "prisma_flow.svg"
+        svg_path.write_text(svg_content, encoding="utf-8")
+        logger.info("PRISMAReporter: PRISMA SVG saved to %s", svg_path)
+        try:
+            import cairosvg
+            png_path = self._output_dir / "prisma_flow.png"
+            cairosvg.svg2png(bytestring=svg_content.encode("utf-8"), write_to=str(png_path), dpi=150)
+            logger.info("PRISMAReporter: PRISMA PNG saved to %s", png_path)
+        except Exception as _e:
+            logger.debug("PRISMAReporter: PNG export skipped (%s)", _e)
+
         json_path = self._output_dir / "prisma_flow.json"
         json_path.write_text(json.dumps(c, indent=2, default=str), encoding="utf-8")
 
@@ -139,7 +152,7 @@ class PRISMAReporter:
     async def generate_review_report(
         self,
         protocol:            Any,             # ReviewProtocol
-        included_studies:    List[str],        # record_ids
+        included_studies:    List[Any],        # record_ids (str) or dicts with pmid/title/abstract
         extracted_data:      List[Any],        # List[ExtractedData | dict]
         quality_assessments: List[Any],        # List[RoBAssessment | dict]
         prisma_state:        Any,
@@ -170,13 +183,21 @@ class PRISMAReporter:
             protocol, c, len(included_studies), llm_client
         )
 
-        # Included studies table
+        # Included studies table — supports both plain record_id strings and
+        # enriched dicts {record_id, pmid, title, abstract}
+        def _study_label(s: Any) -> str:
+            if isinstance(s, dict):
+                pmid  = s.get("pmid") or ""
+                title = (s.get("title") or "")[:80]
+                return f"PMID:{pmid}  {title}" if pmid else (title or s.get("record_id", ""))
+            return str(s)
+
         studies_rows = "\n".join(
-            f"| {i+1} | {sid} |"
-            for i, sid in enumerate(included_studies)
+            f"| {i+1} | {_study_label(s)} |"
+            for i, s in enumerate(included_studies)
         )
         studies_table = (
-            "| # | Study ID |\n|---|---|\n" + studies_rows
+            "| # | Study |\n|---|---|\n" + studies_rows
             if studies_rows else "*No studies included.*"
         )
 

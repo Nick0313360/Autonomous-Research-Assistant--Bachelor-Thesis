@@ -36,7 +36,7 @@ from models.data_classes import (
 logger = logging.getLogger(__name__)
 
 _PROMPT_PATH    = Path(__file__).parent.parent / "config" / "prompts" / "abstract_screening.txt"
-_CONCURRENCY    = 20
+_CONCURRENCY    = 25
 _INCLUDE_THRESH = 0.70
 _EXCLUDE_THRESH = 0.25
 _UNCERTAIN_P    = 0.50

@@ -28,7 +28,7 @@ Overall judgment
 "some_concerns" if any domain is "some_concerns" (and none is "high")
 "low"           if all domains are "low"
 
-LLM: claude-sonnet-4-6 (llm_client.CLAUDE_MODEL) — per-domain call.
+LLM: gpt:oss120b (llm_client.GPT_MODEL) via BFH inference — per-domain call.
 """
 from __future__ import annotations
 
@@ -205,7 +205,7 @@ class QualityAssessor:
     Assesses methodological quality for each included study.
 
     Uses RoB 2 for RCTs, simplified NOS for observational studies.
-    Each domain judgment is made by a separate LLM call (CLAUDE_MODEL).
+    Each domain judgment is made by a separate LLM call (GPT_MODEL).
     """
 
     async def assess_batch(

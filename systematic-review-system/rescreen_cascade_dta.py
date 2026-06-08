@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -27,7 +28,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-BASE_OUTPUT = Path("/Users/nikitagolovanov/Desktop/final_Data")
+BASE_OUTPUT = Path(os.environ.get("RESCREEN_OUTPUT_DIR", "artefacts/rescreen"))
 CONCURRENCY = 20
 
 _SYSTEM = "You are a systematic review screener for a Cochrane Diagnostic Test Accuracy review."

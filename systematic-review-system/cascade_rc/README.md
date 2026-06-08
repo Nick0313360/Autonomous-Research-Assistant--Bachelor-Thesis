@@ -84,7 +84,7 @@ The result is a `CertificationResult` JSON saved under `artefacts/cascade_rc/cer
 | `ltt.delta_total` | 0.10 | Total failure probability |
 | `ltt.delta_eta` | 0.03 | Budget for η upper bound |
 | `ltt.delta_LTT` | 0.07 | Budget for LTT calibration |
-| `ltt.K` | 20 | Grid resolution per axis |
+| `ltt.K` | 10 | Grid resolution per axis |
 | `ltt.B` | 5 | LLM ensemble size |
 | `ltt.c_human` | 5.0 | Cost weight for human review |
 | `ltt.c_llm` | 0.001 | Cost weight for LLM escalation |

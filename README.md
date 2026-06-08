@@ -35,7 +35,9 @@ Given a scored corpus (embedding score `s` and LLM self-consistency score `u`), 
 ├── README.md                          ← this file
 ├── systematic-review-system/
 │   ├── main.py                        ← pipeline entry point
-│   ├── run_pipeline.py                ← cascade_rc pipeline entry point
+│   ├── run_orchestrator.py            ← alternate pipeline runner (no LLM client init)
+│   ├── run_comparative.py             ← head-to-head evaluation (Native vs CASCADE-RC)
+│   ├── generate_graphs.py             ← publication figures
 │   ├── requirements.txt
 │   ├── example_protocol.json          ← sample review protocol
 │   ├── CD008874_protocol.json         ← CLEF-TAR DTA topic protocols (×6)

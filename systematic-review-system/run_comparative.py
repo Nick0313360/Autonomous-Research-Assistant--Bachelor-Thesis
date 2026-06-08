@@ -45,6 +45,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import pickle
 import time
 from pathlib import Path
@@ -89,7 +90,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-BASE_OUTPUT = Path("/Users/nikitagolovanov/Desktop/final_Data")
+BASE_OUTPUT = Path(os.environ.get("COMPARATIVE_OUTPUT_DIR", "artefacts/comparative"))
 
 TOPIC_CONFIG: Dict[str, Dict[str, str]] = {
     "CD012768": {

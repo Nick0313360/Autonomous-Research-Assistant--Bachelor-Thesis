@@ -3,9 +3,10 @@ generate_graphs.py
 ==================
 Generates 6 publication-quality figures for the CD008874 systematic review.
 All data is hardcoded. Saves PDF + PNG at 300 DPI to:
-  /Users/nikitagolovanov/Desktop/final_Data/graphs/
+  artefacts/graphs/   (override with GRAPHS_OUTPUT_DIR env var)
 """
 from __future__ import annotations
+import os
 import sys
 import warnings
 warnings.filterwarnings("ignore")
@@ -19,7 +20,7 @@ import numpy as np
 from pathlib import Path
 
 # ── Output directory ──────────────────────────────────────────────────────────
-OUT_DIR = Path("/Users/nikitagolovanov/Desktop/final_Data/graphs")
+OUT_DIR = Path(os.environ.get("GRAPHS_OUTPUT_DIR", "artefacts/graphs"))
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Style ─────────────────────────────────────────────────────────────────────

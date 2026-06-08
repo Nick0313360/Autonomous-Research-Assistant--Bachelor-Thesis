@@ -241,10 +241,13 @@ artefacts/cascade_rc/topic_results/
 artefacts/
 results/
 
-# macOS iCloud sync conflict copies
+# macOS iCloud sync conflict copies (with and without file extension)
 *\ 2.*
 *\ 3.*
 *\ 4.*
+*\ 2
+*\ 3
+*\ 4
 *\ 2/
 *\ 3/
 *\ 4/

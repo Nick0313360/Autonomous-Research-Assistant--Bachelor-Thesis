@@ -240,3 +240,11 @@ artefacts/cascade_rc/topic_results/
 # Ignore local run artifacts
 artefacts/
 results/
+
+# macOS iCloud sync conflict copies
+*\ 2.*
+*\ 3.*
+*\ 4.*
+*\ 2/
+*\ 3/
+*\ 4/

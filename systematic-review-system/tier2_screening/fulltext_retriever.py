@@ -32,9 +32,9 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-_CONCURRENCY      = 5
-_REQUEST_TIMEOUT  = 30    # seconds
-_DOWNLOAD_TIMEOUT = 120   # seconds for large PDF downloads
+_CONCURRENCY      = 30
+_REQUEST_TIMEOUT  = 5     # seconds
+_DOWNLOAD_TIMEOUT = 5     # seconds — fast fallback to abstract-only
 
 # API URL templates
 _UNPAYWALL_URL      = "https://api.unpaywall.org/v2/{doi}?email={email}"
@@ -54,6 +54,21 @@ _EFETCH_URL         = (
     "?db=pmc&id={pmcid}&rettype=xml&retmode=xml"
 )
 
+# New sources A, B, C
+_EPMC_PMID_SEARCH_URL = (
+    "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+    "?query=EXT_ID:{pmid}&resulttype=core&format=json"
+)
+_EPMC_PMID_XML_URL    = (
+    "https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML"
+)
+_SEMANTIC_SCHOLAR_URL = (
+    "https://api.semanticscholar.org/graph/v1/paper/PMID:{pmid}"
+    "?fields=openAccessPdf,abstract"
+)
+_CROSSREF_URL         = "https://api.crossref.org/works/{doi}"
+_CROSSREF_EMAIL       = "nikita.golovanov@students.bfh.ch"
+
 
 class FullTextRetriever:
     """
@@ -70,6 +85,13 @@ class FullTextRetriever:
         self._email     = os.getenv("UNPAYWALL_EMAIL", "")
         self._base_dir  = Path("data") / "reviews" / review_id / "documents"
         self._base_dir.mkdir(parents=True, exist_ok=True)
+        self._source_counts: Dict[str, int] = {
+            "direct_url": 0, "unpaywall": 0, "europe_pmc": 0,
+            "pubmed_central": 0, "europepmc_pmid": 0,
+            "semantic_scholar": 0, "crossref": 0,
+        }
+        self._ss_sem = asyncio.Semaphore(1)   # 1 req/s for Semantic Scholar
+        self._cr_sem = asyncio.Semaphore(5)   # 5 req/s for CrossRef
 
     # ------------------------------------------------------------------
     # Public API
@@ -120,10 +142,15 @@ class FullTextRetriever:
             results = await asyncio.gather(*[_bounded(ctx) for ctx in sorted_contexts])
 
         successes = sum(1 for r in results if r.success)
+        sc = self._source_counts
         logger.info(
-            "FullTextRetriever: %d/%d documents retrieved successfully",
-            successes,
-            len(results),
+            "FullTextRetriever: %d/%d documents retrieved successfully "
+            "(unpaywall=%d europepmc_doi=%d pubmed_central=%d "
+            "europepmc_pmid=%d semantic_scholar=%d crossref=%d direct=%d)",
+            successes, len(results),
+            sc["unpaywall"], sc["europe_pmc"], sc["pubmed_central"],
+            sc["europepmc_pmid"], sc["semantic_scholar"], sc["crossref"],
+            sc["direct_url"],
         )
         return list(results)
 
@@ -147,25 +174,37 @@ class FullTextRetriever:
         if oa_url.startswith("http"):
             result = await self._try_direct_pdf(session, candidate, oa_url, dest_dir)
             if result.success:
+                self._source_counts["direct_url"] += 1
                 return result
 
         # Source 1: Unpaywall (PDF)
         if doi:
             result = await self._try_unpaywall(session, candidate, doi, dest_dir)
             if result.success:
+                self._source_counts["unpaywall"] += 1
                 return result
 
-        # Source 2: Europe PMC (XML)
+        # Source 2: Europe PMC (XML) — DOI-based
         if doi:
             result = await self._try_europe_pmc(session, candidate, doi, dest_dir)
             if result.success:
+                self._source_counts["europe_pmc"] += 1
                 return result
 
         # Source 3: PubMed Central eFetch (XML)
         if pmid:
             result = await self._try_pubmed_central(session, candidate, pmid, dest_dir)
             if result.success:
+                self._source_counts["pubmed_central"] += 1
                 return result
+
+        # Sources A, B, C — tried concurrently after all existing sources fail
+        result = await self._try_new_sources(session, candidate, doi, pmid, dest_dir)
+        if result.success:
+            src = result.retrieval_source or ""
+            if src in self._source_counts:
+                self._source_counts[src] += 1
+            return result
 
         logger.debug(
             "FullTextRetriever: all sources failed for record_id=%s (doi=%r pmid=%r)",
@@ -458,3 +497,268 @@ class FullTextRetriever:
             with dest.open("wb") as fh:
                 async for chunk in resp.content.iter_chunked(65536):
                     fh.write(chunk)
+
+    # ------------------------------------------------------------------
+    # New concurrent fallback: Sources A, B, C
+    # ------------------------------------------------------------------
+
+    async def _try_new_sources(
+        self,
+        session:   aiohttp.ClientSession,
+        candidate: CandidateRecord,
+        doi:       str,
+        pmid:      str,
+        dest_dir:  Path,
+    ) -> RetrievalResult:
+        """Try Sources A (Europe PMC PMID), B (Semantic Scholar), C (CrossRef) concurrently.
+
+        Returns the first successful result in priority order A > B > C.
+        Each source writes to a uniquely named file to avoid concurrent write conflicts.
+        """
+        tasks = []
+        if pmid:
+            tasks.append(self._try_europepmc_pmid(session, candidate, pmid, dest_dir))
+            tasks.append(self._try_semantic_scholar(session, candidate, pmid, dest_dir))
+        if doi:
+            tasks.append(self._try_crossref(session, candidate, doi, dest_dir))
+
+        if not tasks:
+            return RetrievalResult(
+                record_id      = candidate.record_id,
+                success        = False,
+                failure_reason = "new_sources_no_identifiers",
+            )
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for res in results:
+            if isinstance(res, RetrievalResult) and res.success:
+                return res
+
+        return RetrievalResult(
+            record_id      = candidate.record_id,
+            success        = False,
+            failure_reason = "new_sources_all_failed",
+        )
+
+    # ------------------------------------------------------------------
+    # Source A: Europe PMC via PMID (EXT_ID lookup)
+    # ------------------------------------------------------------------
+
+    async def _try_europepmc_pmid(
+        self,
+        session:   aiohttp.ClientSession,
+        candidate: CandidateRecord,
+        pmid:      str,
+        dest_dir:  Path,
+    ) -> RetrievalResult:
+        search_url = _EPMC_PMID_SEARCH_URL.format(pmid=pmid)
+        try:
+            async with session.get(
+                search_url,
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                if resp.status != 200:
+                    return RetrievalResult(
+                        record_id      = candidate.record_id,
+                        success        = False,
+                        failure_reason = f"europepmc_pmid_search_http_{resp.status}",
+                    )
+                data = await resp.json(content_type=None)
+        except Exception as exc:
+            logger.debug("FullTextRetriever: Europe PMC PMID search failed: %s", exc)
+            return RetrievalResult(
+                record_id      = candidate.record_id,
+                success        = False,
+                failure_reason = f"europepmc_pmid_search_error: {exc}",
+            )
+
+        results = (data.get("resultList") or {}).get("result") or []
+        if not results:
+            return RetrievalResult(
+                record_id      = candidate.record_id,
+                success        = False,
+                failure_reason = "europepmc_pmid_not_found",
+            )
+
+        hit   = results[0]
+        pmcid = hit.get("pmcid")
+        if not pmcid:
+            return RetrievalResult(
+                record_id      = candidate.record_id,
+                success        = False,
+                failure_reason = "europepmc_pmid_no_pmcid",
+            )
+        if not hit.get("fullTextAvailable"):
+            return RetrievalResult(
+                record_id      = candidate.record_id,
+                success        = False,
+                failure_reason = "europepmc_pmid_no_fulltext",
+            )
+
+        xml_url  = _EPMC_PMID_XML_URL.format(pmcid=pmcid)
+        xml_path = dest_dir / "fulltext_epmc.xml"
+        try:
+            await self._download_file(session, xml_url, xml_path)
+        except Exception as exc:
+            logger.debug("FullTextRetriever: Europe PMC PMID XML download failed: %s", exc)
+            return RetrievalResult(
+                record_id      = candidate.record_id,
+                success        = False,
+                failure_reason = f"europepmc_pmid_download_error: {exc}",
+            )
+
+        logger.info(
+            "FullTextRetriever: retrieved XML via Europe PMC (PMID) for %s",
+            candidate.record_id,
+        )
+        return RetrievalResult(
+            record_id        = candidate.record_id,
+            success          = True,
+            xml_path         = str(xml_path),
+            retrieval_source = "europepmc_pmid",
+        )
+
+    # ------------------------------------------------------------------
+    # Source B: Semantic Scholar open-access PDF
+    # ------------------------------------------------------------------
+
+    async def _try_semantic_scholar(
+        self,
+        session:   aiohttp.ClientSession,
+        candidate: CandidateRecord,
+        pmid:      str,
+        dest_dir:  Path,
+    ) -> RetrievalResult:
+        async with self._ss_sem:
+            url = _SEMANTIC_SCHOLAR_URL.format(pmid=pmid)
+            try:
+                async with session.get(
+                    url,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    if resp.status != 200:
+                        await asyncio.sleep(1.0)
+                        return RetrievalResult(
+                            record_id      = candidate.record_id,
+                            success        = False,
+                            failure_reason = f"semantic_scholar_http_{resp.status}",
+                        )
+                    data = await resp.json(content_type=None)
+            except Exception as exc:
+                logger.debug("FullTextRetriever: Semantic Scholar request failed: %s", exc)
+                await asyncio.sleep(1.0)
+                return RetrievalResult(
+                    record_id      = candidate.record_id,
+                    success        = False,
+                    failure_reason = f"semantic_scholar_error: {exc}",
+                )
+
+            oa_pdf_url = (data.get("openAccessPdf") or {}).get("url")
+            if not oa_pdf_url:
+                await asyncio.sleep(1.0)
+                return RetrievalResult(
+                    record_id      = candidate.record_id,
+                    success        = False,
+                    failure_reason = "semantic_scholar_no_oa_pdf",
+                )
+
+            pdf_path = dest_dir / "fulltext_ss.pdf"
+            try:
+                await self._download_file(session, oa_pdf_url, pdf_path)
+            except Exception as exc:
+                logger.debug("FullTextRetriever: Semantic Scholar PDF download failed: %s", exc)
+                await asyncio.sleep(1.0)
+                return RetrievalResult(
+                    record_id      = candidate.record_id,
+                    success        = False,
+                    failure_reason = f"semantic_scholar_download_error: {exc}",
+                )
+
+            await asyncio.sleep(1.0)  # hold semaphore: enforce 1 req/s
+
+        logger.info(
+            "FullTextRetriever: retrieved PDF via Semantic Scholar for %s",
+            candidate.record_id,
+        )
+        return RetrievalResult(
+            record_id        = candidate.record_id,
+            success          = True,
+            pdf_path         = str(pdf_path),
+            retrieval_source = "semantic_scholar",
+        )
+
+    # ------------------------------------------------------------------
+    # Source C: CrossRef PDF link resolution
+    # ------------------------------------------------------------------
+
+    async def _try_crossref(
+        self,
+        session:   aiohttp.ClientSession,
+        candidate: CandidateRecord,
+        doi:       str,
+        dest_dir:  Path,
+    ) -> RetrievalResult:
+        async with self._cr_sem:
+            url = _CROSSREF_URL.format(doi=doi)
+            try:
+                async with session.get(
+                    url,
+                    params  = {"mailto": _CROSSREF_EMAIL},
+                    timeout = aiohttp.ClientTimeout(total=8),
+                ) as resp:
+                    if resp.status != 200:
+                        await asyncio.sleep(0.2)
+                        return RetrievalResult(
+                            record_id      = candidate.record_id,
+                            success        = False,
+                            failure_reason = f"crossref_http_{resp.status}",
+                        )
+                    data = await resp.json(content_type=None)
+            except Exception as exc:
+                logger.debug("FullTextRetriever: CrossRef request failed: %s", exc)
+                await asyncio.sleep(0.2)
+                return RetrievalResult(
+                    record_id      = candidate.record_id,
+                    success        = False,
+                    failure_reason = f"crossref_error: {exc}",
+                )
+
+            links   = (data.get("message") or {}).get("link") or []
+            pdf_url = next(
+                (lnk.get("URL") for lnk in links
+                 if "pdf" in (lnk.get("content-type") or "").lower()),
+                None,
+            )
+            if not pdf_url:
+                await asyncio.sleep(0.2)
+                return RetrievalResult(
+                    record_id      = candidate.record_id,
+                    success        = False,
+                    failure_reason = "crossref_no_pdf_link",
+                )
+
+            pdf_path = dest_dir / "fulltext_cr.pdf"
+            try:
+                await self._download_file(session, pdf_url, pdf_path)
+            except Exception as exc:
+                logger.debug("FullTextRetriever: CrossRef PDF download failed: %s", exc)
+                await asyncio.sleep(0.2)
+                return RetrievalResult(
+                    record_id      = candidate.record_id,
+                    success        = False,
+                    failure_reason = f"crossref_download_error: {exc}",
+                )
+
+            await asyncio.sleep(0.2)  # hold semaphore: enforce ≤5 req/s
+
+        logger.info(
+            "FullTextRetriever: retrieved PDF via CrossRef for %s",
+            candidate.record_id,
+        )
+        return RetrievalResult(
+            record_id        = candidate.record_id,
+            success          = True,
+            pdf_path         = str(pdf_path),
+            retrieval_source = "crossref",
+        )

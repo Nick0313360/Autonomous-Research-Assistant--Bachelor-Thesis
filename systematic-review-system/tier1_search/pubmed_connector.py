@@ -17,6 +17,7 @@ import asyncio
 import logging
 import os
 import time
+import xml.etree.ElementTree as ET
 from typing import List, Optional
 
 from Bio import Entrez, Medline
@@ -194,6 +195,79 @@ class PubMedConnector:
 
         logger.info("PubMedConnector: returning %d records", len(records))
         return records
+
+    # ------------------------------------------------------------------
+    # Direct PMID fetch
+    # ------------------------------------------------------------------
+
+    async def fetch_by_pmids(
+        self,
+        pmids: list[str],
+        batch_size: int = 200,
+    ) -> dict[str, dict]:
+        """
+        Fetch title and abstract for a list of PMIDs via PubMed efetch.
+        Returns dict of {pmid_str: {"title": str, "abstract": str}}.
+        PMIDs with no result are silently omitted from the dict.
+        """
+        loop = asyncio.get_running_loop()
+        results: dict[str, dict] = {}
+
+        for start in range(0, len(pmids), batch_size):
+            batch = pmids[start : start + batch_size]
+            try:
+                # Biopython Entrez already carries the API key set in __init__.
+                # efetch with retmode="xml" returns a bytes handle.
+                def _fetch(b: list[str] = batch) -> bytes:
+                    handle = Entrez.efetch(
+                        db="pubmed",
+                        id=",".join(b),
+                        rettype="abstract",
+                        retmode="xml",
+                    )
+                    data = handle.read()
+                    handle.close()
+                    return data
+
+                xml_bytes = await loop.run_in_executor(None, _fetch)
+                root = ET.fromstring(xml_bytes)
+
+                for article in root.findall(".//PubmedArticle"):
+                    pmid_el = article.find("./MedlineCitation/PMID")
+                    if pmid_el is None:
+                        continue
+                    pmid_str = (pmid_el.text or "").strip()
+                    if not pmid_str:
+                        continue
+
+                    title_el = article.find("./MedlineCitation/Article/ArticleTitle")
+                    title = (
+                        "".join(title_el.itertext()).strip()
+                        if title_el is not None
+                        else ""
+                    )
+
+                    abstract_els = article.findall(
+                        "./MedlineCitation/Article/Abstract/AbstractText"
+                    )
+                    abstract = " ".join(
+                        "".join(el.itertext()) for el in abstract_els
+                    ).strip()
+
+                    results[pmid_str] = {"title": title, "abstract": abstract}
+
+            except Exception as exc:
+                logger.warning(
+                    "fetch_by_pmids: batch [%d:%d] failed: %s",
+                    start,
+                    start + batch_size,
+                    exc,
+                )
+
+            if start + batch_size < len(pmids):
+                await asyncio.sleep(0.11)
+
+        return results
 
     @staticmethod
     def _parse_record(record: dict) -> Optional[object]:

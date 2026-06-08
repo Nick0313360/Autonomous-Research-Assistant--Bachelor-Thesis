@@ -46,7 +46,7 @@ from models.data_classes import (
 
 logger = logging.getLogger(__name__)
 
-_CONCURRENCY       = 5
+_CONCURRENCY       = 20
 _TIER1_THRESHOLD   = 3_000     # tokens
 _TIER2_THRESHOLD   = 12_000    # tokens
 _INCLUDE_THRESH    = 0.70
@@ -206,7 +206,10 @@ class FullTextScreener:
                 reason=str(exc),
             )
 
-        return self._build_result(document.record_id, criterion_results, tier)
+        abstract_decision = (
+            abstract_context.abstract_decision if abstract_context else None
+        )
+        return self._build_result(document.record_id, criterion_results, tier, abstract_decision)
 
     # ------------------------------------------------------------------
     # Tier 1: short documents — direct LLM criterion check
@@ -478,6 +481,7 @@ class FullTextScreener:
         record_id:         str,
         criterion_results: List[CriterionResult],
         tier:              ScreeningTier,
+        abstract_decision: Optional[Decision] = None,
     ) -> ScreeningResult:
         """Aggregate criterion results into a ScreeningResult."""
         if not criterion_results:
@@ -491,6 +495,15 @@ class FullTextScreener:
 
         p_final = max(0.0, min(1.0, p_final))
         decision, _ = _decide(p_final)
+
+        # Conflict guard: abstract said INCLUDE but full-text is borderline EXCLUDE
+        # → flag for human review instead of hard-excluding
+        if (
+            decision == Decision.EXCLUDE
+            and p_final > 0.40
+            and abstract_decision == Decision.INCLUDE
+        ):
+            decision = Decision.UNCERTAIN
 
         explanation_parts = [
             f"{cr.criterion_id}: p={cr.p_satisfy:.2f}"

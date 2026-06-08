@@ -222,6 +222,14 @@ class Criterion:
 
 
 @dataclass
+class BenchmarkSpec:
+    topic_id: str
+    qrels_path: str
+    evaluation_mode: str = "abstract_with_fulltext_fallback"
+    canonical_pmids_path: Optional[str] = None
+
+
+@dataclass
 class ReviewProtocol:
     title: str
     research_question: str
@@ -233,6 +241,8 @@ class ReviewProtocol:
     date_range: Optional[tuple[int, int]] = None
     language_restrictions: List[str] = field(default_factory=list)
     max_papers_per_db: int = 500
+    pubmed_query_override: Optional[str] = None
+    benchmark: Optional[BenchmarkSpec] = None
 
     def __post_init__(self) -> None:
         for fname in ("title", "research_question"):
@@ -397,6 +407,7 @@ class FinalDecision:
     criterion_probabilities: Dict[str, float]
     explanation: str
     decision_record_id: str
+    pmid: Optional[str] = None
     exclusion_reason: Optional[str] = None
     exclusion_criterion_id: Optional[str] = None
 

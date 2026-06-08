@@ -22,7 +22,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from models.data_classes import (
     AbstractContext,
@@ -45,6 +45,7 @@ from tier2_screening.hybrid_retriever import HybridRetriever
 from tier2_screening.pico_extractor import PICOExtractor
 from tier2_screening.span_verifier import SpanVerifier
 from infrastructure.prisma_manager import PRISMAManager
+from tier2_screening.cascade_rc_router import CascadeRCRouter
 
 logger = logging.getLogger(__name__)
 
@@ -74,16 +75,26 @@ class ScreeningOrchestrator:
 
     def __init__(
         self,
-        encoder:         Any,
-        llm_client:      Any,
-        review_id:       str,
-        prisma:          Optional[PRISMAManager] = None,
-        calibrator_path: Optional[Path] = None,
+        encoder:              Any,
+        llm_client:           Any,
+        review_id:            str,
+        prisma:               Optional[PRISMAManager] = None,
+        calibrator_path:      Optional[Path] = None,
+        cert_path:            Optional[Path] = None,
+        topic_parquet_path:   Optional[Path] = None,
+        run_store:            Optional[Any] = None,
+        filter_threshold:     float = 0.01,
     ) -> None:
-        self._encoder          = encoder
-        self._llm_client       = llm_client
-        self._review_id        = review_id
-        self._prisma           = prisma or PRISMAManager(review_id)
+        self._encoder           = encoder
+        self._llm_client        = llm_client
+        self._review_id         = review_id
+        self._prisma            = prisma or PRISMAManager(review_id)
+        self._run_store         = run_store
+        self._filter_threshold  = filter_threshold
+        self._cascade_router: Optional[CascadeRCRouter] = (
+            CascadeRCRouter(cert_path, topic_parquet_path)
+            if (cert_path and topic_parquet_path) else None
+        )
         self._hybrid_retriever = HybridRetriever(calibrator_path=calibrator_path)
         self._abstract_screener = AbstractScreener()
         self._example_buffer   = ExampleBuffer(encoder)
@@ -127,7 +138,7 @@ class ScreeningOrchestrator:
         # ------------------------------------------------------------------
         self._hybrid_retriever.build_indices(candidates, self._encoder)
         ranked = self._hybrid_retriever.rank(candidates, pico_embedding, pico_query_text)
-        above, below = self._hybrid_retriever.filter(ranked)
+        above, below = self._hybrid_retriever.filter(ranked, threshold=self._filter_threshold)
 
         logger.info(
             "ScreeningOrchestrator: hybrid filter — %d above threshold, %d below",
@@ -138,6 +149,33 @@ class ScreeningOrchestrator:
         # Stage 3: abstract screening
         # ------------------------------------------------------------------
         above_candidates = [r.candidate for r in above]
+        cascade_excluded_decisions: List[FinalDecision] = []
+
+        if self._cascade_router is not None:
+            llm_candidates: List[CandidateRecord] = []
+            for cand in above_candidates:
+                result = await self._cascade_router.route(cand.pmid or "")
+                if self._run_store:
+                    self._run_store.emit("screening.route_decision", {
+                        "pmid": result["pmid"],
+                        "s": result["s"],
+                        "u": result["u"],
+                        "route": result["route"],
+                    })
+                if result["decision"] == "EXCLUDE":
+                    cascade_excluded_decisions.append(FinalDecision(
+                        decision                = Decision.EXCLUDE,
+                        p_include_final         = 0.0,
+                        criterion_probabilities = {},
+                        explanation             = f"cascade_rc auto_reject (s={result['s']:.4f})",
+                        decision_record_id      = cand.record_id,
+                        pmid                    = cand.pmid,
+                        exclusion_reason        = f"cascade_rc auto_reject (s={result['s']:.4f})",
+                    ))
+                else:
+                    llm_candidates.append(cand)
+            above_candidates = llm_candidates
+
         contexts: List[AbstractContext] = await self._abstract_screener.screen_batch(
             candidates     = above_candidates,
             protocol       = protocol,
@@ -147,7 +185,10 @@ class ScreeningOrchestrator:
         )
 
         n_abs_inc = sum(1 for c in contexts if c.abstract_decision != Decision.EXCLUDE)
-        n_abs_exc = sum(1 for c in contexts if c.abstract_decision == Decision.EXCLUDE)
+        n_abs_exc = (
+            sum(1 for c in contexts if c.abstract_decision == Decision.EXCLUDE)
+            + len(cascade_excluded_decisions)
+        )
         self._prisma.record_abstract_screening(included=n_abs_inc, excluded=n_abs_exc)
         logger.info(
             "ScreeningOrchestrator: abstract screening — include/uncertain=%d exclude=%d",
@@ -172,6 +213,14 @@ class ScreeningOrchestrator:
         n_retrieved  = sum(1 for r in retrieval_results if r.success)
         n_failed     = sum(1 for r in retrieval_results if not r.success)
         self._prisma.record_fulltext_retrieval(retrieved=n_retrieved, failed=n_failed)
+
+        # Identify contexts of papers that passed abstract screening but had no
+        # retrievable full text — needed by smart flagging below.
+        successful_record_ids     = {r.record_id for r in retrieval_results if r.success}
+        failed_retrieval_contexts = [
+            ctx for ctx in include_contexts
+            if ctx.record_id not in successful_record_ids
+        ]
 
         # ------------------------------------------------------------------
         # Stage 5: document parsing
@@ -200,6 +249,9 @@ class ScreeningOrchestrator:
                 len(include_contexts),
             )
             fallback_decisions = self._abstract_fallback_decisions(include_contexts)
+            for fd in fallback_decisions:
+                cand = candidate_map.get(fd.decision_record_id)
+                fd.pmid = cand.pmid if cand else None
             n_fb_inc = sum(1 for fd in fallback_decisions if fd.decision == Decision.INCLUDE)
             n_fb_exc = sum(1 for fd in fallback_decisions if fd.decision == Decision.EXCLUDE)
             n_fb_unc = sum(1 for fd in fallback_decisions if fd.decision == Decision.UNCERTAIN)
@@ -213,7 +265,40 @@ class ScreeningOrchestrator:
                 "ScreeningOrchestrator: abstract fallback — include=%d exclude=%d uncertain=%d",
                 n_fb_inc, n_fb_exc, n_fb_unc,
             )
-            return self._build_output(fallback_decisions, [], [])
+            return self._build_output(cascade_excluded_decisions + fallback_decisions, [], [])
+
+        # ------------------------------------------------------------------
+        # Smart flagging — PDF-retrieval failures get UNCERTAIN or EXCLUDE
+        # based on their abstract-stage p_include score.
+        # Only runs in the normal path (some documents DID parse).
+        # The all-failed fallback above already handles the other case.
+        # ------------------------------------------------------------------
+        smart_flagged, _sf_threshold = self._smart_flag_retrieval_failures(
+            include_contexts          = include_contexts,
+            failed_retrieval_contexts = failed_retrieval_contexts,
+            candidate_map             = candidate_map,
+        )
+        n_sf_uncertain = sum(1 for d in smart_flagged if d.decision == Decision.UNCERTAIN)
+        n_sf_excluded  = sum(1 for d in smart_flagged if d.decision == Decision.EXCLUDE)
+        prevalence_est = (
+            sum(1 for ctx in include_contexts if ctx.abstract_decision == Decision.INCLUDE)
+            / len(include_contexts) if include_contexts else 0.0
+        )
+        expected_m_plus = round(n_sf_uncertain * prevalence_est)
+        logger.info(
+            "SmartFlagging results:\n"
+            "  PDF retrieved successfully:  %d papers\n"
+            "  Flagged for human review:    %d papers (p_include >= %.4f)\n"
+            "  Excluded (low confidence):   %d papers (p_include < %.4f)\n\n"
+            "  Human review queue precision estimate:\n"
+            "  If m+ prevalence in abstract-passed pool = %.1f%%,\n"
+            "  expected m+ in human queue = ~%d papers",
+            n_retrieved,
+            n_sf_uncertain, _sf_threshold,
+            n_sf_excluded,  _sf_threshold,
+            prevalence_est * 100,
+            expected_m_plus,
+        )
 
         # Build context lookup for the documents we have
         context_map: Dict[str, AbstractContext] = {c.record_id: c for c in contexts}
@@ -266,6 +351,9 @@ class ScreeningOrchestrator:
             protocol     = protocol,
             llm_client   = self._llm_client,
         )
+        for fd in final_decisions:
+            cand = candidate_map.get(fd.decision_record_id)
+            fd.pmid = cand.pmid if cand else None
 
         # ------------------------------------------------------------------
         # Stage 9: PRISMA fulltext screening update
@@ -280,16 +368,130 @@ class ScreeningOrchestrator:
 
         self._prisma.record_fulltext_screening(
             included     = n_ft_inc,
-            excluded     = n_ft_exc,
+            excluded     = n_ft_exc + n_sf_excluded,
             reasons_dict = reasons,
         )
         self._prisma.record_inclusion(n_ft_inc)
 
-        return self._build_output(final_decisions, documents, documents)
+        return self._build_output(
+            cascade_excluded_decisions + final_decisions + smart_flagged,
+            documents,
+            documents,
+        )
 
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _smart_flag_retrieval_failures(
+        include_contexts:          List[AbstractContext],
+        failed_retrieval_contexts: List[AbstractContext],
+        candidate_map:             Dict[str, CandidateRecord],
+    ) -> Tuple[List[FinalDecision], float]:
+        """
+        Assign UNCERTAIN or EXCLUDE to papers that passed abstract screening
+        but had no retrievable full text.
+
+        Returns (decisions, selected_threshold).
+        """
+        if not include_contexts or not failed_retrieval_contexts:
+            return [], 0.0
+
+        # Step 1: p_include distribution over ALL passed papers
+        p_scores = sorted(
+            ctx.overall_include_probability for ctx in include_contexts
+        )
+        n = len(p_scores)
+
+        def _pct(q: float) -> float:
+            idx = q / 100.0 * (n - 1)
+            lo  = int(idx)
+            hi  = min(lo + 1, n - 1)
+            return p_scores[lo] + (idx - lo) * (p_scores[hi] - p_scores[lo])
+
+        p25 = _pct(25); p50 = _pct(50); p75 = _pct(75)
+        p85 = _pct(85); p90 = _pct(90); p95 = _pct(95)
+
+        logger.info(
+            "AbstractScreener p_include distribution for %d passed papers: "
+            "p25=%.3f p50=%.3f p75=%.3f p85=%.3f p90=%.3f p95=%.3f",
+            n, p25, p50, p75, p85, p90, p95,
+        )
+
+        # Step 2: threshold applies only to INCLUDE-decided papers.
+        # UNCERTAIN-decided papers (p_include=_UNCERTAIN_P fallback) always go
+        # to human review — the threshold is meaningless for them.
+        include_only_failed = [
+            ctx for ctx in failed_retrieval_contexts
+            if ctx.abstract_decision == Decision.INCLUDE
+        ]
+
+        def _count_above(thresh: float) -> int:
+            return sum(
+                1 for ctx in include_only_failed
+                if ctx.overall_include_probability >= thresh
+            )
+
+        n75 = _count_above(p75)
+        if n75 <= 400:
+            selected, n_est = p75, n75
+        else:
+            n85 = _count_above(p85)
+            if n85 <= 250:
+                selected, n_est = p85, n85
+            else:
+                n90 = _count_above(p90)
+                if n90 <= 150:
+                    selected, n_est = p90, n90
+                else:
+                    selected = p95
+                    n_est    = _count_above(p95)
+
+        n_uncertain_forced = len(failed_retrieval_contexts) - len(include_only_failed)
+        logger.info(
+            "SmartFlagging: selected threshold=%.4f → "
+            "estimated human_review_queue=%d papers "
+            "(%d abstract-UNCERTAIN always flagged + %d above threshold)",
+            selected, n_uncertain_forced + n_est, n_uncertain_forced, n_est,
+        )
+
+        # Step 3: build FinalDecision for every failed-retrieval paper
+        decisions: List[FinalDecision] = []
+        for ctx in failed_retrieval_contexts:
+            cand = candidate_map.get(ctx.record_id)
+            p    = ctx.overall_include_probability
+
+            # Abstract-UNCERTAIN papers: always flag for human review.
+            # Threshold only discriminates among abstract-INCLUDE papers.
+            if ctx.abstract_decision == Decision.UNCERTAIN or p >= selected:
+                dec  = Decision.UNCERTAIN
+                expl = (
+                    f"Full text not retrievable (p_include={p:.3f}, "
+                    f"abstract_decision={ctx.abstract_decision.value}). "
+                    f"Requires human full-text verification."
+                )
+                excl_reason = None
+            else:
+                dec  = Decision.EXCLUDE
+                expl = (
+                    f"Full text not retrievable and abstract confidence too low "
+                    f"(p_include={p:.3f} < threshold={selected:.3f}). "
+                    f"Excluded to minimise junk in human queue."
+                )
+                excl_reason = expl
+
+            decisions.append(FinalDecision(
+                decision                = dec,
+                p_include_final         = p,
+                criterion_probabilities = ctx.criterion_probabilities,
+                explanation             = expl,
+                decision_record_id      = ctx.record_id,
+                pmid                    = cand.pmid if cand else None,
+                exclusion_reason        = excl_reason,
+            ))
+
+        return decisions, selected
 
     @staticmethod
     def _abstract_fallback_decisions(

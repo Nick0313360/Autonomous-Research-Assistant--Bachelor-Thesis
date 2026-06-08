@@ -95,6 +95,18 @@ def load_protocol(json_path: str):
         language_restrictions = raw.get("language_restrictions", []),
         max_papers_per_db   = int(raw.get("max_papers_per_db", 500)),
     )
+    if raw.get("benchmark"):
+        from models.data_classes import BenchmarkSpec
+        bm = raw["benchmark"]
+        protocol.benchmark = BenchmarkSpec(
+            topic_id=bm["topic_id"],
+            qrels_path=bm["qrels_path"],
+            evaluation_mode=bm.get(
+                "evaluation_mode",
+                "abstract_with_fulltext_fallback"
+            ),
+            canonical_pmids_path=bm.get("canonical_pmids_path"),
+        )
     return protocol
 
 

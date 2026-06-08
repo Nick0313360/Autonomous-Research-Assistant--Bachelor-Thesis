@@ -1,0 +1,22 @@
+<name>/
+├── cmd/
+│   └── server/
+│       └── main.go           # Entry point
+├── internal/
+│   ├── handler/
+│   │   └── health.go
+│   ├── middleware/
+│   │   ├── logging.go
+│   │   ├── recovery.go
+│   │   └── cors.go
+│   ├── model/
+│   ├── service/
+│   └── repository/
+├── pkg/
+│   └── httputil/
+│       └── response.go       # Standard JSON response helpers
+├── go.mod
+├── go.sum
+├── .gitignore
+├── Makefile
+└── README.md

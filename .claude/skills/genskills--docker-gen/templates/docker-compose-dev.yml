@@ -1,0 +1,292 @@
+services:
+  # -- Application ----------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development               # Switch to 'production' for deploy
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    ports:
+      - "${PORT:-3000}:3000"
+      - "9229:9229"                      # Node debugger (dev only)
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/app?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+    env_file:
+      - .env
+    volumes:
+      - .:/app:cached                    # Dev: bind mount with caching
+      - /app/node_modules                # Exclude node_modules from bind
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    init: true                           # Proper PID 1 signal handling
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - app-network
+
+  # -- Database -------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    profiles: ["", "dev", "test", "staging"]
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres         # Override in production
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    shm_size: 256m                       # Prevent shared memory issues
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    networks:
+      - app-network
+
+  # -- Database Migrations (init container pattern) -------------------------
+  migrate:
+    build:
+      context: .
+      target: production
+    command: ["npx", "prisma", "migrate", "deploy"]
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/app?sslmode=disable"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"                        # Run once and exit
+    profiles: ["migrate"]
+    networks:
+      - app-network
+
+  # -- Database Backup ------------------------------------------------------
+  db-backup:
+    image: postgres:16-alpine
+    entrypoint: /bin/sh
+    command: >
+      -c 'pg_dump -h db -U postgres -d app -F c -f /backups/app_$$(date +%Y%m%d_%H%M%S).dump'
+    environment:
+      PGPASSWORD: postgres
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    profiles: ["backup"]
+    networks:
+      - app-network
+
+  # -- Redis ----------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    networks:
+      - app-network
+
+  # -- Reverse Proxy / Ingress ----------------------------------------------
+  traefik:
+    image: traefik:v3.2
+    profiles: ["proxy"]
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"                      # Dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt_data:/letsencrypt
+    labels:
+      - "traefik.enable=true"
+      # Rate limiting middleware
+      - "traefik.http.middlewares.rate-limit.ratelimit.average=100"
+      - "traefik.http.middlewares.rate-limit.ratelimit.burst=50"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    networks:
+      - app-network
+
+  # -- Monitoring: Prometheus -----------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    profiles: ["monitoring"]
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - monitoring
+
+  # -- Monitoring: Grafana --------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: ["monitoring"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin  # Override in production
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # -- Monitoring: Loki (log aggregation) -----------------------------------
+  loki:
+    image: grafana/loki:3.1.0
+    profiles: ["monitoring"]
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./docker/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # -- Monitoring: cAdvisor (container metrics) -----------------------------
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    profiles: ["monitoring"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+    read_only: true
+    networks:
+      - monitoring
+
+  # -- Tracing: Jaeger ------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    profiles: ["monitoring"]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"                    # UI
+      - "4317:4317"                      # OTLP gRPC
+      - "4318:4318"                      # OTLP HTTP
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # -- OpenTelemetry Collector ----------------------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.108.0
+    profiles: ["monitoring"]
+    command: ["--config", "/etc/otel-collector.yml"]
+    volumes:
+      - ./docker/otel/otel-collector.yml:/etc/otel-collector.yml:ro
+    ports:
+      - "4319:4317"                      # OTLP gRPC (shifted to avoid Jaeger conflict)
+      - "4320:4318"                      # OTLP HTTP
+    depends_on:
+      - jaeger
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - app-network
+      - monitoring
+
+# -- Networks ---------------------------------------------------------------
+networks:
+  app-network:
+    driver: bridge
+  monitoring:
+    driver: bridge
+
+# -- Volumes ----------------------------------------------------------------
+volumes:
+  db_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  letsencrypt_data:

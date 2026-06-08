@@ -1,0 +1,17 @@
+<name>/
+├── src/
+│   ├── index.ts               # Public API surface (barrel export)
+│   ├── client.ts              # Main client class
+│   ├── types.ts               # Public type definitions
+│   └── utils/
+│       └── helpers.ts
+├── tests/
+│   ├── client.test.ts
+│   └── helpers.test.ts
+├── tsup.config.ts             # Dual CJS/ESM build config
+├── tsconfig.json
+├── package.json               # "exports" field with CJS/ESM, "types", "files"
+├── .gitignore
+├── CHANGELOG.md
+├── LICENSE
+└── README.md

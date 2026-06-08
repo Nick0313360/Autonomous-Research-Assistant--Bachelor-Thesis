@@ -1,0 +1,49 @@
+{
+  "title": "Airway physical examination tests for detection of difficult airway management in apparently normal adult patients",
+  "research_question": "What is the diagnostic accuracy of Mallampati classification and other airway examination tests for detecting difficult airway in adult patients with no apparent anatomical airway abnormalities?",
+  "pico": {
+    "population": "adult patients with no apparent anatomical airway abnormalities",
+    "intervention": "Mallampati classification and other commonly used airway examination tests",
+    "comparator": "reference standard for difficult airway assessment",
+    "outcome": "diagnostic accuracy for difficult face mask ventilation, difficult laryngoscopy, difficult tracheal intubation, and failed intubation",
+    "study_design": "diagnostic accuracy study"
+  },
+  "inclusion_criteria": [
+    {
+      "criterion_id": "IC-01",
+      "text": "Study evaluates airway physical examination tests for difficult airway detection",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-02",
+      "text": "Study reports diagnostic accuracy measures (sensitivity, specificity, AUC)",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-03",
+      "text": "Adult patients (18 years or older) with apparently normal airway anatomy",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "IC-04",
+      "text": "Evaluates Mallampati classification or other airway examination tests (thyromental distance, sternomental distance, etc.)",
+      "type": "MANDATORY"
+    }
+  ],
+  "exclusion_criteria": [
+    {
+      "criterion_id": "EC-01",
+      "text": "Pediatric patients (under 18 years) or patients with known anatomical airway abnormalities",
+      "type": "MANDATORY"
+    },
+    {
+      "criterion_id": "EC-02",
+      "text": "Conference abstracts without full text",
+      "type": "MANDATORY"
+    }
+  ],
+  "target_databases": ["pubmed", "semantic_scholar"],
+  "max_papers_per_db": 10000,
+  "date_range": [2000, 2025],
+  "language_restrictions": ["en"]
+}

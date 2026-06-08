@@ -1,0 +1,19 @@
+<name>/
+├── src/
+│   ├── index.ts               # Entry point with shebang
+│   ├── commands/
+│   │   └── default.ts         # Default command
+│   ├── lib/
+│   │   └── config.ts          # Config file loading (cosmiconfig)
+│   └── utils/
+│       ├── logger.ts           # Chalk + ora output
+│       └── prompt.ts           # Interactive prompts (inquirer)
+├── tests/
+│   └── commands/
+│       └── default.test.ts
+├── bin/
+│   └── <name>.js              # Bin entry with shebang
+├── tsconfig.json
+├── package.json               # "bin" field configured
+├── .gitignore
+└── README.md

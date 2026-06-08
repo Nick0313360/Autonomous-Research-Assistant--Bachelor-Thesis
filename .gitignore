@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# macOS system files
+.DS_Store
+
 # Distribution / packaging
 .Python
 build/
@@ -201,7 +204,50 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Generated data (systematic review outputs)
+systematic-review-system/data/
+slr_agent/data/
+
+# IDE specific
+.vscode/
+.idea/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+# ==========================================
+# CASCADE-RC Specific Ignores
+# ==========================================
+
+# Data & Datasets
+# Ignore the raw CLEF-TAR downloads and local data copies
+systematic-review-system/data/clef_tar/
+systematic-review-system/cascade_rc/baselines/rlstop_vendor/data/
+
+# LLM Cache & Databases
+# Step 3 generates a large sqlite DB that should stay local
+*.db
+*.db-journal
+artefacts/cascade_rc/llm_cache.db
+
+# Pipeline Outputs
+# Processed results and scores are saved as Parquet
+*.parquet
+artefacts/cascade_rc/topic_results/
+
+# Results & Logs
+# Ignore local run artifacts
+artefacts/
+results/
+
+# macOS iCloud sync conflict copies (with and without file extension)
+*\ 2.*
+*\ 3.*
+*\ 4.*
+*\ 2
+*\ 3
+*\ 4
+*\ 2/
+*\ 3/
+*\ 4/

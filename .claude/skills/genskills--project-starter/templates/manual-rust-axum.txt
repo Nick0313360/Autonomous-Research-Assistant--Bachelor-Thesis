@@ -1,0 +1,17 @@
+<name>/
+├── src/
+│   ├── main.rs               # Server setup, router
+│   ├── routes/
+│   │   ├── mod.rs
+│   │   └── health.rs
+│   ├── handlers/
+│   │   ├── mod.rs
+│   │   └── health.rs
+│   ├── extractors/
+│   │   └── mod.rs            # Custom extractors
+│   └── error.rs              # Error types with IntoResponse
+├── tests/
+│   └── health.rs
+├── Cargo.toml
+├── .gitignore
+└── README.md

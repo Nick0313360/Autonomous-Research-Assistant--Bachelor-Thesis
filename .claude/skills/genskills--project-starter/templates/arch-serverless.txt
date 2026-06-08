@@ -1,0 +1,19 @@
+<name>/
+├── src/
+│   ├── functions/                 # One directory per function
+│   │   ├── <function-a>/
+│   │   │   ├── handler.ts         # Function entry point
+│   │   │   ├── schema.ts          # Input/output validation (zod)
+│   │   │   └── handler.test.ts
+│   │   └── <function-b>/
+│   │       └── ...
+│   ├── shared/                    # Shared utilities across functions
+│   │   ├── middleware/            # Middy middleware (AWS) or equivalent
+│   │   ├── clients/              # Service clients (DB, external APIs)
+│   │   └── types/
+│   ├── infrastructure/            # IaC definitions
+│   │   ├── stacks/               # CDK stacks / Terraform modules
+│   │   └── constructs/           # Reusable constructs
+├── serverless.yml / vercel.json / wrangler.toml
+├── vitest.config.ts               # Unit test config
+└── tsconfig.json

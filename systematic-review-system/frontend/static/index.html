@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SciReview — Autonomous Systematic Review</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<style>
+:root {
+  --bg:          #0a0a0f;
+  --surface:     #12121a;
+  --border:      #1e1e2e;
+  --accent:      #6366f1;
+  --accent-dim:  rgba(99,102,241,0.12);
+  --accent-glow: rgba(99,102,241,0.25);
+  --success:     #22c55e;
+  --success-dim: rgba(34,197,94,0.12);
+  --warning:     #f59e0b;
+  --warning-dim: rgba(245,158,11,0.12);
+  --error:       #ef4444;
+  --error-dim:   rgba(239,68,68,0.12);
+  --text:        #e2e8f0;
+  --text-2:      #94a3b8;
+  --radius:      8px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ── LAYOUT ── */
+.wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 44px 24px 96px;
+}
+
+/* ── HEADER ── */
+.hdr {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding-bottom: 32px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--border);
+}
+.hdr-left { display: flex; flex-direction: column; gap: 5px; }
+.hdr-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  color: var(--text);
+}
+.hdr-title em { color: var(--accent); font-style: normal; }
+.hdr-sub { font-size: 13px; color: var(--text-2); }
+
+/* ── BADGES ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.badge-default { border: 1px solid var(--border); background: var(--surface); color: var(--text-2); }
+.badge-green   { border: 1px solid rgba(34,197,94,0.3); background: var(--success-dim); color: var(--success); }
+.badge-indigo  { border: 1px solid rgba(99,102,241,0.3); background: var(--accent-dim); color: #a5b4fc; }
+
+/* ── CARD ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 20px;
+}
+.card-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  margin-bottom: 22px;
+}
+
+/* ── CONFIG TOP GRID ── */
+.cfg-top {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 28px;
+  margin-bottom: 22px;
+}
+.cfg-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 10px;
+}
+.topic-row { display: flex; align-items: center; gap: 10px; }
+
+/* ── FORM ELEMENTS ── */
+label.lbl {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+select, textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+select:focus, textarea:focus { border-color: var(--accent); }
+select {
+  padding: 9px 32px 9px 12px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2394a3b8' d='M6 8 0 0h12z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  cursor: pointer;
+}
+select option { background: #1a1a28; }
+textarea { padding: 9px 12px; resize: vertical; }
+
+.field { margin-bottom: 16px; }
+
+/* ── OPTIONS COLUMN ── */
+.opts { display: flex; flex-direction: column; gap: 22px; }
+
+/* ── TOGGLE ── */
+.toggle-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.toggle-info { flex: 1; }
+.toggle-lbl  { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 2px; }
+.toggle-hint { font-size: 11px; color: var(--text-2); line-height: 1.4; }
+
+.sw { position: relative; width: 40px; height: 22px; flex-shrink: 0; margin-top: 2px; }
+.sw input { opacity: 0; width: 0; height: 0; }
+.sw-track {
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  border-radius: 22px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.sw-track::before {
+  content: '';
+  position: absolute;
+  left: 3px; top: 3px;
+  width: 16px; height: 16px;
+  background: var(--text-2);
+  border-radius: 50%;
+  transition: transform 0.2s, background 0.2s;
+}
+.sw input:checked ~ .sw-track { background: var(--accent); }
+.sw input:checked ~ .sw-track::before { transform: translateX(18px); background: #fff; }
+.sw input:disabled ~ .sw-track { opacity: 0.35; cursor: not-allowed; }
+
+/* ── SLIDER ── */
+.slider-wrap { display: flex; flex-direction: column; gap: 8px; }
+.slider-head { display: flex; justify-content: space-between; align-items: center; }
+.slider-val  { font-size: 13px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+input[type=range] {
+  width: 100%;
+  height: 4px;
+  border: none;
+  border-radius: 2px;
+  background: var(--border);
+  appearance: none;
+  cursor: pointer;
+  outline: none;
+  padding: 0;
+}
+input[type=range]::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  cursor: pointer;
+}
+
+/* ── PICO GRID ── */
+.pico-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+textarea.filling { background: rgba(99,102,241,0.05); transition: background 0.35s; }
+
+/* ── RUN BUTTON ── */
+.btn-run {
+  width: 100%;
+  height: 52px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: opacity 0.2s;
+  margin-top: 8px;
+}
+.btn-run:hover:not(:disabled) { opacity: 0.85; }
+.btn-run:disabled { opacity: 0.4; cursor: not-allowed; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid rgba(255,255,255,0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ── SECTION VISIBILITY ── */
+#sec-progress { display: none; }
+#sec-results  { display: none; }
+
+/* ── STAGE CARDS ── */
+.stages {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.st-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 15px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  text-align: center;
+  transition: border-color 0.25s;
+}
+.st-icon {
+  width: 34px; height: 34px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  background: var(--border);
+  color: var(--text-2);
+  transition: background 0.25s, color 0.25s;
+}
+.st-name {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.st-status {
+  font-size: 11px;
+  color: var(--text-2);
+  min-height: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.st-card.running { border-color: var(--accent); }
+.st-card.running .st-icon  { background: var(--accent-dim); color: var(--accent); }
+.st-card.running .st-name  { animation: pulse 1.5s ease-in-out infinite; }
+.st-card.running .st-status { color: var(--accent); }
+
+.st-card.done { border-color: rgba(34,197,94,0.3); }
+.st-card.done .st-icon   { background: var(--success-dim); color: var(--success); }
+.st-card.done .st-status { color: var(--success); }
+
+/* ── LIVE FEED ── */
+.feed-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.feed-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.feed-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.feed-dot.done { background: var(--success); animation: none; }
+.feed-hdr-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+.feed-body {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.feed-body::-webkit-scrollbar { width: 3px; }
+.feed-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.feed-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 14px;
+  font-size: 12px;
+  animation: fadeUp 0.18s ease-out;
+}
+.feed-row:hover { background: rgba(255,255,255,0.02); }
+.feed-ts   { font-variant-numeric: tabular-nums; color: var(--text-2); font-size: 11px; flex-shrink: 0; }
+.feed-ico  { flex-shrink: 0; width: 16px; text-align: center; }
+.feed-msg  { color: var(--text); line-height: 1.45; }
+
+/* ── RESULTS ── */
+.section-hdr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.n-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 12px;
+  background: var(--accent-dim);
+  color: #a5b4fc;
+  border: 1px solid rgba(99,102,241,0.25);
+}
+
+/* ── BENCHMARK COMPARISON ── */
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 26px;
+}
+.cmp-col { padding: 18px 22px; }
+.cmp-col:first-child { border-right: 1px solid var(--border); }
+.cmp-col-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-2);
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.m-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.m-row:last-child { border-bottom: none; }
+.m-lbl { font-size: 12px; color: var(--text-2); }
+.m-val {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.m-val.good { color: var(--success); }
+.m-val.warn { color: var(--warning); }
+.m-val.bad  { color: var(--error); }
+
+/* ── PAPERS ── */
+.papers-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.paper-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  display: block;
+  transition: border-color 0.15s;
+}
+.paper-card:hover { border-color: var(--accent); }
+.paper-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+.paper-pmid { font-size: 10px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+.empty-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 48px;
+  color: var(--text-2);
+}
+.empty-state i { font-size: 28px; display: block; margin-bottom: 12px; opacity: 0.35; }
+
+/* ── ACTION BUTTONS ── */
+.action-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 15px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  transition: border-color 0.15s, background 0.15s;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn:hover { border-color: var(--accent); background: var(--accent-dim); color: var(--text); }
+
+/* ── MODALS ── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 24px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.overlay.open { opacity: 1; pointer-events: all; }
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal-prisma { max-width: 680px; }
+.modal-report { max-width: 780px; }
+
+.modal-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.modal-hdr-title { font-size: 14px; font-weight: 600; }
+.modal-hdr-acts  { display: flex; align-items: center; gap: 6px; }
+.btn-icon {
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 12px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-icon:hover { color: var(--text); border-color: var(--accent); }
+
+.modal-body {
+  overflow-y: auto;
+  padding: 24px;
+  flex: 1;
+}
+.modal-body::-webkit-scrollbar { width: 5px; }
+.modal-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.modal-body svg { width: 100%; height: auto; }
+
+/* report prose */
+.rp h1,.rp h2,.rp h3 { color: var(--text); font-weight: 600; margin: 22px 0 10px; }
+.rp h1 { font-size: 19px; } .rp h2 { font-size: 16px; } .rp h3 { font-size: 14px; }
+.rp p  { color: var(--text-2); margin-bottom: 12px; line-height: 1.7; }
+.rp ul,.rp ol { padding-left: 20px; margin-bottom: 12px; color: var(--text-2); }
+.rp li { margin-bottom: 4px; line-height: 1.6; }
+.rp table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 12px; }
+.rp th,.rp td { padding: 7px 12px; border: 1px solid var(--border); text-align: left; }
+.rp th { background: var(--bg); color: var(--text-2); font-weight: 600; }
+.rp td { color: var(--text-2); }
+.rp code { font-family: 'Fira Code', monospace; font-size: 12px; background: var(--bg); padding: 2px 5px; border-radius: 3px; color: #a5b4fc; }
+.rp blockquote { border-left: 2px solid var(--border); padding-left: 14px; color: var(--text-2); margin-bottom: 12px; }
+
+/* ── TOASTS ── */
+#toasts {
+  position: fixed;
+  bottom: 22px; right: 22px;
+  display: flex; flex-direction: column;
+  gap: 7px; z-index: 200;
+}
+.toast {
+  padding: 11px 15px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid;
+  animation: fadeUp 0.18s ease-out;
+  max-width: 320px;
+  line-height: 1.4;
+}
+.toast-error { background: var(--error-dim);   border-color: rgba(239,68,68,0.35); color: #fca5a5; }
+.toast-warn  { background: var(--warning-dim);  border-color: rgba(245,158,11,0.35); color: #fcd34d; }
+.toast-info  { background: var(--accent-dim);   border-color: rgba(99,102,241,0.35); color: #a5b4fc; }
+
+/* ── RESPONSIVE ── */
+@media(max-width:780px){
+  .cfg-top     { grid-template-columns: 1fr; }
+  .pico-grid   { grid-template-columns: 1fr; }
+  .stages      { grid-template-columns: repeat(3,1fr); }
+  .papers-grid { grid-template-columns: repeat(2,1fr); }
+  .compare-grid{ grid-template-columns: 1fr; }
+  .cmp-col:first-child { border-right: none; border-bottom: 1px solid var(--border); }
+}
+@media(max-width:480px){
+  .papers-grid { grid-template-columns: 1fr; }
+  .stages      { grid-template-columns: repeat(2,1fr); }
+  .hdr         { flex-direction: column; align-items: flex-start; gap: 14px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 1 · HEADER
+══════════════════════════════════════════════════════════ -->
+<header class="hdr">
+  <div class="hdr-left">
+    <div class="hdr-title">Sci<em>Review</em></div>
+    <div class="hdr-sub">Autonomous Systematic Review Pipeline</div>
+  </div>
+  <span class="badge badge-default">
+    <i class="fa-solid fa-flask-vial"></i>
+    BFH Thesis Demo 2026
+  </span>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 2 · CONFIGURATION
+══════════════════════════════════════════════════════════ -->
+<section id="sec-config">
+<div class="card">
+  <div class="card-title">Configure Review</div>
+
+  <div class="cfg-top">
+    <!-- LEFT: topic selector -->
+    <div>
+      <div class="cfg-label">Research Topic</div>
+      <div class="topic-row">
+        <select id="topic-sel" style="flex:1">
+          <option value="" disabled selected>Loading topics…</option>
+        </select>
+        <span class="badge badge-green" id="bm-badge" style="display:none">
+          <i class="fa-solid fa-certificate"></i>Benchmark
+        </span>
+      </div>
+    </div>
+
+    <!-- RIGHT: options -->
+    <div class="opts">
+      <div>
+        <div class="cfg-label">Options</div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-lbl">CASCADE-RC Mode</div>
+            <div class="toggle-hint" title="Uses conformal recall certificates (COPA 2026)">
+              Conformal recall certificates
+            </div>
+          </div>
+          <label class="sw">
+            <input type="checkbox" id="cascade-tog" disabled>
+            <span class="sw-track"></span>
+          </label>
+        </div>
+      </div>
+
+      <div id="slider-wrap">
+        <div class="slider-wrap">
+          <div class="slider-head">
+            <span class="cfg-label" style="margin:0">Max papers / database</span>
+            <span class="slider-val" id="slider-lbl">100</span>
+          </div>
+          <input type="range" id="papers-slider" min="50" max="500" value="100" step="50">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PICO FIELDS -->
+  <div class="pico-grid">
+    <div class="field">
+      <label class="lbl">Population</label>
+      <textarea id="f-pop" rows="2" placeholder="e.g. Adult patients undergoing general anaesthesia"></textarea>
+    </div>
+    <div class="field">
+      <label class="lbl">Intervention</label>
+      <textarea id="f-int" rows="2" placeholder="e.g. Mallampati classification and airway tests"></textarea>
+    </div>
+    <div class="field">
+      <label class="lbl">Comparator</label>
+      <textarea id="f-cmp" rows="2" placeholder="e.g. Reference standard for difficult airway"></textarea>
+    </div>
+    <div class="field">
+      <label class="lbl">Outcome</label>
+      <textarea id="f-out" rows="2" placeholder="e.g. Diagnostic accuracy (sensitivity, specificity)"></textarea>
+    </div>
+  </div>
+
+  <div class="field">
+    <label class="lbl">Study Design</label>
+    <textarea id="f-std" rows="1" placeholder="e.g. Diagnostic accuracy study, randomized controlled trial"></textarea>
+  </div>
+
+  <div class="field">
+    <label class="lbl">Research Question</label>
+    <textarea id="f-rq" rows="3" placeholder="Describe the clinical question this review should answer…"></textarea>
+  </div>
+
+  <button class="btn-run" id="btn-run">
+    <i class="fa-solid fa-play"></i>
+    Start Review
+  </button>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 3 · PROGRESS
+══════════════════════════════════════════════════════════ -->
+<section id="sec-progress">
+<div class="card">
+  <div class="card-title">Pipeline Progress</div>
+
+  <div class="stages" id="stages-row"></div>
+
+  <div class="feed-card">
+    <div class="feed-hdr">
+      <div class="feed-dot" id="feed-dot"></div>
+      <span class="feed-hdr-lbl">Live Events</span>
+    </div>
+    <div class="feed-body" id="feed-body"></div>
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 4 · RESULTS
+══════════════════════════════════════════════════════════ -->
+<section id="sec-results">
+<div class="card">
+  <div class="card-title">Review Complete</div>
+
+  <!-- benchmark comparison card, shown only in benchmark mode -->
+  <div id="cmp-block" style="display:none">
+    <div class="compare-grid">
+      <div class="cmp-col">
+        <div class="cmp-col-title">This Run</div>
+        <div class="m-row"><span class="m-lbl">Recall</span><span class="m-val" id="m-recall">—</span></div>
+        <div class="m-row"><span class="m-lbl">False Negative Rate</span><span class="m-val" id="m-fnr">—</span></div>
+        <div class="m-row"><span class="m-lbl">WSS @ 95%</span><span class="m-val" id="m-wss">—</span></div>
+        <div class="m-row"><span class="m-lbl">Coverage</span><span class="m-val" id="m-cov">—</span></div>
+      </div>
+      <div class="cmp-col">
+        <div class="cmp-col-title">Cochrane Ground Truth</div>
+        <div class="m-row"><span class="m-lbl">Known Positives</span><span class="m-val" id="m-np">—</span></div>
+        <div class="m-row"><span class="m-lbl">Corpus Size</span><span class="m-val" id="m-nt">—</span></div>
+        <div class="m-row"><span class="m-lbl">True Positives</span><span class="m-val good" id="m-tp">—</span></div>
+        <div class="m-row"><span class="m-lbl">False Negatives</span><span class="m-val bad" id="m-fn">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- included papers -->
+  <div class="section-hdr">
+    Included Studies
+    <span class="n-badge" id="papers-n">0</span>
+  </div>
+  <div class="papers-grid" id="papers-grid"></div>
+
+  <!-- actions -->
+  <div class="action-row">
+    <button class="btn" id="btn-prisma"><i class="fa-solid fa-diagram-project"></i> PRISMA Diagram</button>
+    <button class="btn" id="btn-report"><i class="fa-solid fa-file-lines"></i> View Report</button>
+    <button class="btn" id="btn-dl-report"><i class="fa-solid fa-download"></i> Download Report</button>
+  </div>
+</div>
+</section>
+
+</div><!-- /wrap -->
+
+<!-- ═══════════════════════════════════════════════════════
+     MODAL · PRISMA
+══════════════════════════════════════════════════════════ -->
+<div class="overlay" id="ov-prisma">
+  <div class="modal modal-prisma">
+    <div class="modal-hdr">
+      <span class="modal-hdr-title">PRISMA Flow Diagram</span>
+      <div class="modal-hdr-acts">
+        <button class="btn-icon" id="btn-dl-prisma" title="Download SVG"><i class="fa-solid fa-download"></i></button>
+        <button class="btn-icon" onclick="closeOv('ov-prisma')" title="Close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+    </div>
+    <div class="modal-body" id="prisma-body"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     MODAL · REPORT
+══════════════════════════════════════════════════════════ -->
+<div class="overlay" id="ov-report">
+  <div class="modal modal-report">
+    <div class="modal-hdr">
+      <span class="modal-hdr-title">Systematic Review Report</span>
+      <div class="modal-hdr-acts">
+        <button class="btn-icon" onclick="closeOv('ov-report')" title="Close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+    </div>
+    <div class="modal-body"><div class="rp" id="report-body"></div></div>
+  </div>
+</div>
+
+<!-- TOASTS -->
+<div id="toasts"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+// ── STATE ────────────────────────────────────────────────
+const S = {
+  topics:    [],
+  topic:     null,   // selected topic object | null = custom
+  runId:     null,
+  running:   false,
+  isBench:   false,
+  es:        null,   // EventSource
+};
+
+// ── STAGE DEFINITIONS ────────────────────────────────────
+const STAGES = [
+  { id:'search',     label:'Search',     icon:'fa-magnifying-glass' },
+  { id:'screening',  label:'Screening',  icon:'fa-filter' },
+  { id:'fulltext',   label:'Full-text',  icon:'fa-file-lines' },
+  { id:'extraction', label:'Extraction', icon:'fa-database' },
+  { id:'report',     label:'Report',     icon:'fa-file-chart-column' },
+];
+
+// server stage → UI stage id
+const STAGE_MAP = {
+  search:             'search',
+  screening:          'screening',
+  extraction:         'extraction',
+  quality:            'extraction',
+  quality_assessment: 'extraction',
+  report:             'report',
+};
+
+// ── BOOT ─────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  buildStages();
+  loadTopics();
+  bindUI();
+});
+
+// ── STAGE CARDS ──────────────────────────────────────────
+function buildStages() {
+  const row = document.getElementById('stages-row');
+  STAGES.forEach(s => {
+    row.insertAdjacentHTML('beforeend', `
+      <div class="st-card" id="st-${s.id}">
+        <div class="st-icon"><i class="fa-solid ${s.icon}"></i></div>
+        <div class="st-name">${s.label}</div>
+        <div class="st-status" id="ss-${s.id}">Pending</div>
+      </div>`);
+  });
+}
+
+function stSet(id, status, note) {
+  const card = document.getElementById(`st-${id}`);
+  const stat = document.getElementById(`ss-${id}`);
+  if (!card) return;
+  card.className = 'st-card' + (status ? ` ${status}` : '');
+  if (note !== undefined) stat.textContent = note;
+  else if (status === 'running') stat.textContent = 'Running…';
+  else if (status === 'done' && stat.textContent === 'Pending') stat.textContent = 'Done';
+}
+
+function stReset() {
+  STAGES.forEach(s => stSet(s.id, '', 'Pending'));
+}
+
+// ── TOPICS ───────────────────────────────────────────────
+async function loadTopics() {
+  try {
+    const r = await fetch('/api/topics');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    S.topics = await r.json();
+    buildDropdown();
+  } catch (e) {
+    toast('Failed to load topics: ' + e.message, 'error');
+    document.getElementById('topic-sel').innerHTML =
+      '<option value="custom">Custom PICO (manual entry)</option>';
+  }
+}
+
+function buildDropdown() {
+  const sel = document.getElementById('topic-sel');
+  sel.innerHTML = '<option value="custom">Custom PICO (manual entry)</option>';
+  S.topics.forEach(t => {
+    const cert = t.has_certificate ? '' : ' · no cert';
+    const lbl  = `${t.id} — ${t.title.length > 58 ? t.title.slice(0, 58) + '…' : t.title}${cert}`;
+    sel.insertAdjacentHTML('beforeend',
+      `<option value="${h(t.id)}">${h(lbl)}</option>`);
+  });
+  sel.value = 'custom';
+  applyCustomMode();
+}
+
+// ── BINDINGS ─────────────────────────────────────────────
+function bindUI() {
+  document.getElementById('topic-sel').addEventListener('change', onTopicChange);
+
+  const slider = document.getElementById('papers-slider');
+  slider.addEventListener('input', () => {
+    document.getElementById('slider-lbl').textContent = slider.value;
+  });
+
+  document.getElementById('btn-run').addEventListener('click', startReview);
+  document.getElementById('btn-prisma').addEventListener('click', openPrisma);
+  document.getElementById('btn-report').addEventListener('click', openReport);
+  document.getElementById('btn-dl-report').addEventListener('click', dlReport);
+  document.getElementById('btn-dl-prisma').addEventListener('click', dlPrisma);
+
+  document.querySelectorAll('.overlay').forEach(ov => {
+    ov.addEventListener('click', e => { if (e.target === ov) closeOv(ov.id); });
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.querySelectorAll('.overlay.open').forEach(o => closeOv(o.id));
+  });
+}
+
+// ── TOPIC SELECT ─────────────────────────────────────────
+function onTopicChange() {
+  const val = document.getElementById('topic-sel').value;
+  if (val === 'custom') {
+    S.topic = null;
+    applyCustomMode();
+    clearPico();
+    return;
+  }
+  const t = S.topics.find(x => x.id === val);
+  if (!t) return;
+  S.topic = t;
+  applyBenchmarkMode(t);
+  fillPico(t);
+}
+
+function applyCustomMode() {
+  document.getElementById('bm-badge').style.display = 'none';
+  document.getElementById('slider-wrap').style.display = '';
+  const tog = document.getElementById('cascade-tog');
+  tog.disabled = true;
+  tog.checked  = false;
+}
+
+function applyBenchmarkMode(t) {
+  document.getElementById('bm-badge').style.display = 'inline-flex';
+  document.getElementById('slider-wrap').style.display = 'none';
+  const tog = document.getElementById('cascade-tog');
+  tog.disabled = !t.has_certificate;
+  if (!t.has_certificate) { tog.checked = false; }
+}
+
+function clearPico() {
+  ['f-pop','f-int','f-cmp','f-out','f-std','f-rq'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+}
+
+function fillPico(t) {
+  const fields = [
+    ['f-pop', t.pico.population],
+    ['f-int', t.pico.intervention],
+    ['f-cmp', t.pico.comparator],
+    ['f-out', t.pico.outcome],
+    ['f-std', t.pico.study_design],
+    ['f-rq',  t.title],
+  ];
+  fields.forEach(([id, val], i) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add('filling');
+    setTimeout(() => {
+      el.value = val || '';
+      setTimeout(() => el.classList.remove('filling'), 350);
+    }, i * 55 + 30);
+  });
+}
+
+// ── START REVIEW ─────────────────────────────────────────
+async function startReview() {
+  if (S.running) return;
+
+  const pico = {
+    population:   document.getElementById('f-pop').value.trim(),
+    intervention: document.getElementById('f-int').value.trim(),
+    comparator:   document.getElementById('f-cmp').value.trim(),
+    outcome:      document.getElementById('f-out').value.trim(),
+    study_design: document.getElementById('f-std').value.trim(),
+  };
+  const rq = document.getElementById('f-rq').value.trim();
+
+  for (const [k, v] of Object.entries(pico)) {
+    if (!v) { toast(`PICO field "${k}" is required.`, 'error'); return; }
+  }
+  if (!rq) { toast('Research question is required.', 'error'); return; }
+
+  const isBench    = !!S.topic;
+  const cascade    = document.getElementById('cascade-tog').checked;
+  const maxPapers  = parseInt(document.getElementById('papers-slider').value, 10);
+
+  const body = {
+    pico,
+    research_question: rq,
+    max_papers:        isBench ? 100 : maxPapers,
+    use_cascade_rc:    cascade,
+    benchmark_topic_id: isBench ? S.topic.id : null,
+  };
+
+  setRunning(true);
+  S.isBench = isBench;
+
+  try {
+    const r = await fetch('/api/runs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+      throw new Error(err.detail || `HTTP ${r.status}`);
+    }
+    const { run_id } = await r.json();
+    S.runId = run_id;
+
+    resetProgress();
+    show('sec-progress');
+    document.getElementById('sec-results').style.display = 'none';
+    setTimeout(() => document.getElementById('sec-progress')
+      .scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+
+    stSet('search', 'running');
+    openSSE(run_id);
+  } catch (e) {
+    toast(e.message, 'error');
+    setRunning(false);
+  }
+}
+
+function setRunning(on) {
+  S.running = on;
+  const btn = document.getElementById('btn-run');
+  btn.disabled = on;
+  btn.innerHTML = on
+    ? '<div class="spinner"></div> Running…'
+    : '<i class="fa-solid fa-play"></i> Start Review';
+}
+
+function resetProgress() {
+  stReset();
+  document.getElementById('feed-body').innerHTML = '';
+  const dot = document.getElementById('feed-dot');
+  dot.className = 'feed-dot';
+  document.getElementById('cmp-block').style.display = 'none';
+  document.getElementById('papers-grid').innerHTML = '';
+  document.getElementById('papers-n').textContent = '0';
+}
+
+// ── SSE ──────────────────────────────────────────────────
+function openSSE(runId) {
+  if (S.es) { S.es.close(); S.es = null; }
+  const es = new EventSource(`/api/runs/${runId}/stream`);
+  S.es = es;
+
+  es.onmessage = e => {
+    let ev;
+    try { ev = JSON.parse(e.data); } catch { return; }
+    onEvent(ev);
+  };
+
+  es.onerror = () => {
+    if (S.running) toast('Stream interrupted — check server logs.', 'warn');
+  };
+}
+
+function onEvent(ev) {
+  const { type, stage, message, data } = ev;
+
+  switch (type) {
+
+    case 'progress':
+      addFeed(stageIcon(stage), message);
+      break;
+
+    case 'stage_complete':
+    case 'stage_done': {
+      const uid = STAGE_MAP[stage];
+      if (!uid) { addFeed('·', message || stage); break; }
+
+      let note = 'Done';
+      if (stage === 'search'    && data?.n_candidates != null) note = `${data.n_candidates} candidates`;
+      if (stage === 'screening' && data?.included      != null) note = `${data.included} included`;
+
+      stSet(uid, 'done', note);
+      addFeed('✓', message || `${stage} complete`);
+
+      // advance the pipeline cursor
+      if (stage === 'search')    stSet('screening',  'running');
+      if (stage === 'screening') stSet('fulltext',   'running');
+      if (stage === 'extraction' || stage === 'quality' || stage === 'quality_assessment') {
+        stSet('fulltext',   'done', 'Done');
+        stSet('extraction', 'done', note === 'Done' ? 'Done' : note);
+        stSet('report',     'running');
+      }
+      break;
+    }
+
+    case 'done':
+      stSet('report', 'done', 'Done');
+      addFeed('✓', 'Review complete');
+      document.getElementById('feed-dot').className = 'feed-dot done';
+      setRunning(false);
+      if (S.es) { S.es.close(); S.es = null; }
+      finalise();
+      break;
+
+    case 'benchmark':
+      populateBenchmark(data);
+      addFeed('📊', 'Benchmark evaluation complete');
+      break;
+
+    case 'error':
+      toast(message || 'Pipeline error', 'error');
+      addFeed('✕', message || 'Error');
+      setRunning(false);
+      break;
+  }
+}
+
+function stageIcon(s) {
+  return { search:'🔍', screening:'⚖', fulltext:'📄', extraction:'🗄', report:'📝' }[s] || '·';
+}
+
+// ── LIVE FEED ────────────────────────────────────────────
+function addFeed(icon, msg) {
+  const body = document.getElementById('feed-body');
+  const now  = new Date();
+  const ts   = `${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
+  body.insertAdjacentHTML('beforeend', `
+    <div class="feed-row">
+      <span class="feed-ts">${ts}</span>
+      <span class="feed-ico">${icon}</span>
+      <span class="feed-msg">${h(String(msg))}</span>
+    </div>`);
+  body.scrollTop = body.scrollHeight;
+}
+
+// ── RESULTS ──────────────────────────────────────────────
+function finalise() {
+  show('sec-results');
+  if (S.isBench) document.getElementById('cmp-block').style.display = '';
+  setTimeout(() => document.getElementById('sec-results')
+    .scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
+  loadPapers();
+}
+
+async function loadPapers() {
+  if (!S.runId) return;
+  try {
+    const r = await fetch(`/api/runs/${S.runId}/papers`);
+    if (!r.ok) return;
+    renderPapers(await r.json());
+  } catch {}
+}
+
+function renderPapers(papers) {
+  const grid = document.getElementById('papers-grid');
+  document.getElementById('papers-n').textContent = papers.length;
+  if (!papers.length) {
+    grid.innerHTML = `<div class="empty-state">
+      <i class="fa-regular fa-folder-open"></i>
+      No papers met inclusion criteria
+    </div>`;
+    return;
+  }
+  grid.innerHTML = papers.map(p => `
+    <a class="paper-card" href="${h(p.url)}" target="_blank" rel="noopener noreferrer">
+      <div class="paper-title">${h(p.title || '(No title)')}</div>
+      <div class="paper-pmid">PMID ${h(p.pmid)}</div>
+    </a>`).join('');
+}
+
+// ── BENCHMARK METRICS ────────────────────────────────────
+function populateBenchmark(d) {
+  if (!d) return;
+  const pct = v => v != null ? `${(v * 100).toFixed(1)}%` : '—';
+
+  function setM(id, txt, cls) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = txt;
+    el.className   = 'm-val' + (cls ? ` ${cls}` : '');
+  }
+
+  const recall = d.recall ?? null;
+  const fnr    = d.fnr    ?? null;
+  const wss    = d.wss_95 ?? null;
+  const cov    = d.coverage ?? null;
+
+  setM('m-recall', pct(recall),
+    recall == null ? '' : recall >= 0.8 ? 'good' : recall >= 0.5 ? 'warn' : 'bad');
+  setM('m-fnr', pct(fnr),
+    fnr == null ? '' : fnr <= 0.1 ? 'good' : fnr <= 0.3 ? 'warn' : 'bad');
+  setM('m-wss', pct(wss),
+    wss == null ? '' : wss >= 0.3 ? 'good' : wss >= 0 ? 'warn' : 'bad');
+  setM('m-cov', pct(cov), '');
+
+  setM('m-np', d.n_positive  != null ? d.n_positive.toLocaleString()  : '—', '');
+  setM('m-nt', d.n_total     != null ? d.n_total.toLocaleString()     : '—', '');
+  setM('m-tp', d.true_positives  != null ? d.true_positives.toLocaleString()  : '—', 'good');
+  setM('m-fn', d.false_negatives != null ? d.false_negatives.toLocaleString() : '—', 'bad');
+}
+
+// ── MODALS ───────────────────────────────────────────────
+async function openPrisma() {
+  if (!S.runId) return;
+  openOv('ov-prisma');
+  const body = document.getElementById('prisma-body');
+  body.innerHTML = '<p style="text-align:center;padding:48px;color:var(--text-2)">Loading…</p>';
+  try {
+    const r = await fetch(`/api/runs/${S.runId}/prisma.svg`);
+    if (!r.ok) { body.innerHTML = '<p style="text-align:center;padding:48px;color:var(--text-2)">PRISMA diagram not available yet.</p>'; return; }
+    body.innerHTML = await r.text();
+  } catch (e) {
+    body.innerHTML = `<p style="color:var(--error)">Error: ${h(e.message)}</p>`;
+  }
+}
+
+async function openReport() {
+  if (!S.runId) return;
+  openOv('ov-report');
+  const body = document.getElementById('report-body');
+  body.innerHTML = '<p style="text-align:center;padding:48px;color:var(--text-2)">Loading…</p>';
+  try {
+    const r = await fetch(`/api/runs/${S.runId}/report`);
+    if (!r.ok) { body.innerHTML = '<p style="color:var(--text-2)">Report not ready.</p>'; return; }
+    body.innerHTML = await r.text();
+  } catch (e) {
+    body.innerHTML = `<p style="color:var(--error)">Error: ${h(e.message)}</p>`;
+  }
+}
+
+function openOv(id)  { document.getElementById(id).classList.add('open'); document.body.style.overflow = 'hidden'; }
+function closeOv(id) { document.getElementById(id).classList.remove('open'); document.body.style.overflow = ''; }
+
+// ── DOWNLOADS ────────────────────────────────────────────
+async function dlReport() {
+  if (!S.runId) return;
+  try {
+    const r = await fetch(`/api/runs/${S.runId}/report`);
+    if (!r.ok) { toast('Report not available yet.', 'warn'); return; }
+    const blob = await r.blob();
+    dl(blob, `review_${S.runId}.html`);
+  } catch (e) { toast('Download failed: ' + e.message, 'error'); }
+}
+
+async function dlPrisma() {
+  if (!S.runId) return;
+  try {
+    const r = await fetch(`/api/runs/${S.runId}/prisma.svg`);
+    if (!r.ok) { toast('PRISMA diagram not available yet.', 'warn'); return; }
+    const blob = await r.blob();
+    dl(blob, `prisma_${S.runId}.svg`);
+  } catch (e) { toast('Download failed: ' + e.message, 'error'); }
+}
+
+function dl(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a   = Object.assign(document.createElement('a'), { href: url, download: name });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── TOASTS ───────────────────────────────────────────────
+function toast(msg, type = 'info') {
+  const c = document.getElementById('toasts');
+  const t = document.createElement('div');
+  t.className   = `toast toast-${type}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => {
+    t.style.transition = 'opacity 0.3s';
+    t.style.opacity    = '0';
+    setTimeout(() => t.remove(), 320);
+  }, 4200);
+}
+
+// ── UTILITIES ────────────────────────────────────────────
+function show(id) { document.getElementById(id).style.display = ''; }
+function p2(n)    { return String(n).padStart(2, '0'); }
+function h(s)     {
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

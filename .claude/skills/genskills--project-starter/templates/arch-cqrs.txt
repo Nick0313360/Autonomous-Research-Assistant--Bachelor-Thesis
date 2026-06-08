@@ -1,0 +1,20 @@
+<name>/
+├── src/
+│   ├── commands/                  # Write side
+│   │   ├── handlers/              # Command handlers
+│   │   ├── validators/            # Command validation
+│   │   └── models/                # Write models
+│   ├── queries/                   # Read side
+│   │   ├── handlers/              # Query handlers
+│   │   ├── projections/           # Read model projections
+│   │   └── models/                # Read-optimized models
+│   ├── events/                    # Domain events
+│   │   ├── definitions/           # Event schemas
+│   │   ├── handlers/              # Event handlers / projectors
+│   │   └── store/                 # Event store interface
+│   ├── shared/                    # Shared infrastructure
+│   │   ├── bus/                   # Command bus, query bus, event bus
+│   │   └── middleware/            # Logging, validation, auth middleware
+│   └── infrastructure/
+│       ├── write-db/              # Write database (event store or normalized)
+│       └── read-db/               # Read database (denormalized/materialized)

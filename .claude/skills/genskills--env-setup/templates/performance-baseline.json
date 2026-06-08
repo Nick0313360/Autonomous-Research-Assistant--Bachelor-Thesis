@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-03-25T12:00:00Z",
+  "platform": "darwin-arm64",
+  "node": "v20.11.0",
+  "metrics": {
+    "install_seconds": 45,
+    "build_seconds": 12,
+    "test_seconds": 8,
+    "test_pass": 142,
+    "test_fail": 0,
+    "dev_startup_seconds": 3,
+    "typecheck_seconds": 6
+  }
+}

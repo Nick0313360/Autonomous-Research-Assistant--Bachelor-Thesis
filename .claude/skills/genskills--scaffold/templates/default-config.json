@@ -1,0 +1,19 @@
+{
+  "includeTests": true,
+  "includeStyles": true,
+  "includeStories": false,
+  "templateDir": "./templates",
+  "defaultTestFramework": "vitest",
+  "defaultStyleApproach": "tailwind",
+  "preferNamedExports": true,
+  "preferBarrelExports": true,
+  "generateFactories": true,
+  "generateSeeders": false,
+  "autoWire": true,
+  "conventionOverrides": {
+    "componentFileCase": "PascalCase",
+    "serviceFileCase": "kebab-case",
+    "testSuffix": ".spec",
+    "stylePattern": "module.css"
+  }
+}

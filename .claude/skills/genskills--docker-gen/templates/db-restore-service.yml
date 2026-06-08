@@ -1,0 +1,15 @@
+db-restore:
+    image: postgres:16-alpine
+    entrypoint: /bin/sh
+    command: -c 'pg_restore -h db -U postgres -d app -c /backups/${BACKUP_FILE}'
+    environment:
+      PGPASSWORD: postgres
+    volumes:
+      - ./backups:/backups:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    profiles: ["restore"]
+    networks:
+      - app-network

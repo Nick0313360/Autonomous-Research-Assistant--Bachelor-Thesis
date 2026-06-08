@@ -1,0 +1,23 @@
+<name>/
+├── src/
+│   ├── domain/                    # Enterprise business rules
+│   │   ├── entities/              # Business objects
+│   │   ├── value-objects/         # Immutable value types
+│   │   └── errors/                # Domain-specific errors
+│   ├── application/               # Application business rules
+│   │   ├── use-cases/             # Interactors / application services
+│   │   ├── ports/                 # Input/output port interfaces
+│   │   └── dto/                   # Data transfer objects
+│   ├── infrastructure/            # Frameworks & drivers
+│   │   ├── persistence/           # Database repositories (implements ports)
+│   │   ├── http/                  # HTTP client adapters
+│   │   ├── messaging/             # Queue/event adapters
+│   │   └── config/                # Environment, DI container
+│   └── presentation/              # Interface adapters
+│       ├── rest/                   # REST controllers/routes
+│       ├── graphql/                # GraphQL resolvers/schema
+│       └── cli/                    # CLI command handlers
+├── tests/
+│   ├── unit/                      # Domain + application tests (no infra)
+│   ├── integration/               # Infrastructure tests with real deps
+│   └── e2e/                       # Full system tests

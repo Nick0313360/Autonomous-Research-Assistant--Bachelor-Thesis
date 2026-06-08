@@ -369,14 +369,13 @@ venv/bin/pytest cascade_rc/tests/ -v -n auto
 
 ---
 
-## Future integration with `main.py`
+## Integration with `main.py`
 
-The cascade_rc package is currently fed pre-scored parquets. The planned integration path:
+CASCADE-RC is self-contained and operates on pre-scored parquet files. It is wired into the main screening pipeline via `tier2_screening/cascade_rc_router.py`, which:
 
-1. `main.py` runs the existing Tier-1 / Tier-2 screening pipeline → produces ranked candidates
-2. A new adapter writes scored parquets in the cascade_rc format (`s`, `u`, `y_abstract`, `is_calib`)
-3. `cascade_rc.calibration.main_calibrate` is called per topic at the end of calibration phase
-4. `cascade_rc.evaluation.metrics` is called at evaluation time to get certified routing decisions
-5. The `ScreeningOrchestrator` uses the certified θ̂ from `CertificateStore` for final routing
+1. Receives ranked candidates from the Tier-1 / Tier-2 screening pipeline
+2. Writes scored parquets in the CASCADE-RC format (`s`, `u`, `y_abstract`, `is_calib`)
+3. Calls `cascade_rc.calibration.main_calibrate` per topic to produce the certified θ̂
+4. Reads the `CertificateStore` at inference time to apply certified routing decisions
 
-The key interface point is the parquet schema in Step 1 above — once `main.py` emits files in that format, the cascade_rc pipeline runs unchanged.
+The key interface point is the parquet schema described in Step 1 above.

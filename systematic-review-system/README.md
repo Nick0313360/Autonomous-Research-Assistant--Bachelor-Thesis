@@ -61,9 +61,24 @@ infrastructure/
 models/
     └── data_classes.py           ← all dataclasses and enums
 
+cascade_rc/                       ← certified screening module (see cascade_rc/README.md)
+evaluation/
+    benchmark_evaluator.py        ← CLEF-TAR benchmark runner
+    build_tables.py               ← LaTeX / CSV result tables
+    sac_metric.py                 ← SAC recall metric
+frontend/
+    server.py                     ← FastAPI async web interface
+    static/index.html             ← single-page UI
+
 config/
     ├── settings.py               ← all thresholds and credentials
     └── prompts/                  ← LLM prompt templates
+
+Top-level scripts (new):
+    rescreen_dta.py               ← DTA rescreen of main-pipeline included set
+    rescreen_cascade_dta.py       ← DTA rescreen of CASCADE-RC routing decisions
+    run_comparative.py            ← head-to-head numerical evaluation
+    generate_graphs.py            ← publication figures
 ```
 
 ## Models
@@ -75,6 +90,8 @@ config/
 | Embeddings | `allenai/specter2_base` | Hybrid retrieval, PICO alignment, section classification |
 
 SPECTER2 projection heads output 128-dim vectors (abstract/PICO) and 256-dim vectors (section).
+
+> **Note:** The BFH endpoint (`https://inference.mlmp.ti.bfh.ch/api/v1`) is institution-internal. External users should set `OPENAI_BASE_URL` and `OPENAI_MODEL` in `.env` to any OpenAI-compatible endpoint.
 
 ## Requirements
 
@@ -186,6 +203,36 @@ All outputs are written to `--output-dir` (default: `data/reports/`):
 | `audit_trail.json` | All LLM decisions by stage, model versions, timestamps |
 
 Full-text documents are cached under `data/reviews/<review_id>/documents/`.
+
+## DTA Rescreen
+
+After running the main pipeline or CASCADE-RC, verify precision on included papers using a strict Diagnostic Test Accuracy prompt:
+
+```bash
+# Re-screen the main pipeline's included set for CD008874
+python rescreen_dta.py
+
+# Re-screen CASCADE-RC auto-included set for a given topic
+python rescreen_cascade_dta.py CD008874
+```
+
+## Comparative Evaluation
+
+```bash
+# Head-to-head numerical evaluation (CASCADE-RC vs baselines)
+python run_comparative.py
+
+# Generate publication figures
+python generate_graphs.py
+```
+
+## Web Frontend
+
+```bash
+uvicorn frontend.server:app --reload --port 8000
+```
+
+Opens the single-page review dashboard at `http://localhost:8000`. All API credentials must be set in `.env`.
 
 ## Testing
 

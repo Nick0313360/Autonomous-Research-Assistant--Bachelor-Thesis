@@ -53,8 +53,9 @@ Given a scored corpus (embedding score `s` and LLM self-consistency score `u`), 
 │   │   ├── search_orchestrator.py
 │   │   └── screening_orchestrator.py
 │   ├── tier1_search/                  ← query builder, database connectors, dedup
-│   ├── tier2_screening/               ← abstract screener, retrieval, full-text screening
-│   ├── tier3_synthesis/               ← data extraction, quality assessment, reporting
+│   ├── tier2_screening/               ← abstract screener, retrieval, full-text screening, CASCADE-RC router
+│   ├── tier3_synthesis/               ← data extraction, quality assessment, PRISMA reporting
+│   ├── tier3_quality/                 ← standalone PRISMA 2020 SVG diagram renderer (no LLM deps)
 │   ├── frontend/                      ← web UI (uvicorn)
 │   ├── cascade_rc/                    ← CASCADE-RC package (see below)
 │   │   ├── config.py
@@ -70,7 +71,10 @@ Given a scored corpus (embedding score `s` and LLM self-consistency score `u`), 
 │   └── tests/                         ← pipeline test suite
 ├── tests/                             ← top-level integration tests
 ├── data/                              ← CLEF-TAR benchmark data
-└── documenation/                      ← thesis-related documents
+├── documenation/                      ← thesis-related documents
+└── documentation/                     ← project documentation
+    ├── meetings/                      ← meeting minutes and client meeting notes
+    └── thesis/                        ← thesis draft and related documents
 ```
 
 ---
@@ -145,6 +149,10 @@ Topic protocol JSONs live at `systematic-review-system/CD<id>_protocol.json`. Ra
 Full documentation for each component:
 
 - **Systematic Review Pipeline:** [`systematic-review-system/README.md`](systematic-review-system/README.md)
+- **Tier 1 — Literature Search:** [`systematic-review-system/tier1_search/README.md`](systematic-review-system/tier1_search/README.md)
+- **Tier 2 — Screening:** [`systematic-review-system/tier2_screening/README.md`](systematic-review-system/tier2_screening/README.md)
+- **Tier 3 — Evidence Synthesis:** [`systematic-review-system/tier3_synthesis/README.md`](systematic-review-system/tier3_synthesis/README.md)
+- **Tier 3 Quality — PRISMA Visual:** [`systematic-review-system/tier3_quality/README.md`](systematic-review-system/tier3_quality/README.md)
 - **CASCADE-RC:** [`systematic-review-system/cascade_rc/README.md`](systematic-review-system/cascade_rc/README.md)
 
 ---

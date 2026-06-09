@@ -195,21 +195,27 @@ async def create_run(req: RunRequest) -> Dict[str, str]:
         "utf-8",
     )
 
+    run_dir = output_dir / f"demo_{run_id}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    pipe_log = run_dir / "pipeline.log"
+
     cmd = [
         "python", "main.py", str(protocol_path),
         "--review-id", f"demo_{run_id}",
         "--output-dir", str(output_dir),
     ]
+    pipe_log_fh = pipe_log.open("wb")
     process = await asyncio.create_subprocess_exec(
         *cmd,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
+        stdout=pipe_log_fh,
+        stderr=pipe_log_fh,
     )
+    pipe_log_fh.close()  # parent closes its copy; subprocess keeps the fd
 
-    run_dir = output_dir / f"demo_{run_id}"
     RUNS[run_id] = {
         "process":  process,
         "log_path": run_dir / "events.jsonl",
+        "pipe_log": pipe_log,
         "run_dir":  run_dir,
     }
     logger.info("Run %s started (pid=%s)", run_id, process.pid)
@@ -232,23 +238,34 @@ async def _sse_generator(run_id: str) -> AsyncGenerator[str, None]:
     run      = RUNS[run_id]
     process  = run["process"]
     log_path: Path = run["log_path"]
+    pipe_log: Path = run["pipe_log"]
 
-    # Wait up to 30 s for events.jsonl to appear
-    deadline = time.monotonic() + 30.0
+    # Wait up to 60 s for events.jsonl to appear (encoder init can take ~30 s)
+    deadline = time.monotonic() + 60.0
     while not log_path.exists() and time.monotonic() < deadline:
+        # Stream pipeline.log lines while waiting so the user sees progress
+        if pipe_log.exists():
+            pass  # handled below after opening
         await asyncio.sleep(0.5)
 
     if not log_path.exists():
+        # Surface whatever the subprocess printed before dying
+        crash = ""
+        if pipe_log.exists():
+            crash = pipe_log.read_text(encoding="utf-8", errors="replace")[-800:]
         yield _sse("error", message="Pipeline did not start (events.jsonl not created)")
+        if crash:
+            yield _sse("log", message=crash)
         return
 
     screening_counter = 0
     done_seen         = False
     last_growth_time  = time.monotonic()
-    last_file_size    = -1          # -1 forces an update on first check
+    last_file_size    = -1
     last_proc_check   = time.monotonic()
 
-    fh = await asyncio.to_thread(open, log_path, encoding="utf-8")
+    fh      = await asyncio.to_thread(open, log_path, encoding="utf-8")
+    pipe_fh = await asyncio.to_thread(open, pipe_log, encoding="utf-8")
     try:
         while True:
             line: str = await asyncio.to_thread(fh.readline)
@@ -309,8 +326,17 @@ async def _sse_generator(run_id: str) -> AsyncGenerator[str, None]:
                     }
                     yield _sse("benchmark", data=result_data)
 
-            else:
-                # No new content — poll and check for termination
+            # Always drain pipeline.log regardless of events.jsonl activity
+            while True:
+                log_line: str = await asyncio.to_thread(pipe_fh.readline)
+                if not log_line:
+                    break
+                stripped = log_line.rstrip()
+                if stripped:
+                    yield _sse("log", message=stripped)
+
+            if not line:
+                # No new content in either file — poll and check for termination
                 await asyncio.sleep(0.5)
 
                 now = time.monotonic()
@@ -337,6 +363,7 @@ async def _sse_generator(run_id: str) -> AsyncGenerator[str, None]:
                     break
     finally:
         await asyncio.to_thread(fh.close)
+        await asyncio.to_thread(pipe_fh.close)
 
 
 # ---------------------------------------------------------------------------

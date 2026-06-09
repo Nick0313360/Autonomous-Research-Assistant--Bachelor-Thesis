@@ -588,6 +588,49 @@ textarea.filling { background: rgba(99,102,241,0.05); transition: background 0.3
   .stages      { grid-template-columns: repeat(2,1fr); }
   .hdr         { flex-direction: column; align-items: flex-start; gap: 14px; }
 }
+
+/* ── LOG TERMINAL ── */
+.log-wrap {
+  margin-top: 18px;
+}
+.log-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.log-hdr-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.log-toggle {
+  font-size: 11px;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+.log-terminal {
+  background: #07070d;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  height: 220px;
+  overflow-y: auto;
+  font-family: 'SFMono-Regular', 'Cascadia Code', 'Menlo', monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #a0aec0;
+  scroll-behavior: smooth;
+}
+.log-terminal .log-line { white-space: pre-wrap; word-break: break-all; }
+.log-terminal .log-line.warn  { color: var(--warning); }
+.log-terminal .log-line.error { color: var(--error); }
+.log-terminal .log-line.info  { color: #68d391; }
 </style>
 </head>
 <body>
@@ -710,6 +753,14 @@ textarea.filling { background: rgba(99,102,241,0.05); transition: background 0.3
       <span class="feed-hdr-lbl">Live Events</span>
     </div>
     <div class="feed-body" id="feed-body"></div>
+  </div>
+
+  <div class="log-wrap" id="log-wrap" style="display:none">
+    <div class="log-hdr">
+      <span class="log-hdr-lbl"><i class="fa-solid fa-terminal"></i> Pipeline Logs</span>
+      <button class="log-toggle" onclick="toggleLog()">hide</button>
+    </div>
+    <div class="log-terminal" id="log-terminal"></div>
   </div>
 </div>
 </section>
@@ -1049,6 +1100,31 @@ function resetProgress() {
   document.getElementById('cmp-block').style.display = 'none';
   document.getElementById('papers-grid').innerHTML = '';
   document.getElementById('papers-n').textContent = '0';
+  document.getElementById('log-terminal').innerHTML = '';
+  document.getElementById('log-wrap').style.display = 'none';
+}
+
+function toggleLog() {
+  const term = document.getElementById('log-terminal');
+  const btn  = document.querySelector('.log-toggle');
+  const hidden = term.style.display === 'none';
+  term.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? 'hide' : 'show';
+}
+
+function appendLog(msg) {
+  const term = document.getElementById('log-terminal');
+  document.getElementById('log-wrap').style.display = '';
+  const lower = msg.toLowerCase();
+  let cls = 'log-line';
+  if (lower.includes('[error]') || lower.includes('error') || lower.includes('traceback') || lower.includes('exception')) cls += ' error';
+  else if (lower.includes('[warning]') || lower.includes('warn')) cls += ' warn';
+  else if (lower.includes('[info]')) cls += ' info';
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = msg;
+  term.appendChild(div);
+  term.scrollTop = term.scrollHeight;
 }
 
 // ── SSE ──────────────────────────────────────────────────
@@ -1114,8 +1190,13 @@ function onEvent(ev) {
       addFeed('📊', 'Benchmark evaluation complete');
       break;
 
+    case 'log':
+      appendLog(message);
+      break;
+
     case 'error':
       toast(message || 'Pipeline error', 'error');
+      appendLog('ERROR: ' + (message || 'Pipeline error'));
       addFeed('✕', message || 'Error');
       setRunning(false);
       break;

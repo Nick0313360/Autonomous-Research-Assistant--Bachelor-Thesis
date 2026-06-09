@@ -147,15 +147,20 @@ async def _run(
     logger.info("Initialising LLM client…")
     llm_client = LLMClient()
 
+    from infrastructure.run_store import RunStore
+    run_store = RunStore(review_id=review_id, output_dir=Path(output_dir))
+
     orchestrator = MainOrchestrator(
         encoder    = encoder,
         llm_client = llm_client,
         review_id  = review_id,
         output_dir = output_dir,
+        run_store  = run_store,
     )
 
     logger.info("Starting full pipeline (review_id=%s)…", review_id)
     result = await orchestrator.run(protocol)
+    run_store.close()
 
     # Final summary already printed by MainOrchestrator._print_summary
     logger.info(

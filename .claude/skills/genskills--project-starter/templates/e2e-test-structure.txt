@@ -1,8 +1,0 @@
-tests/
-├── e2e/
-│   ├── pages/
-│   │   └── home.page.ts     # Page object model
-│   ├── fixtures/
-│   │   └── auth.fixture.ts  # Authenticated session fixture
-│   ├── home.spec.ts         # First E2E test
-│   └── playwright.config.ts

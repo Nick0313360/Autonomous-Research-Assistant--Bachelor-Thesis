@@ -70,7 +70,6 @@ Given a scored corpus (embedding score `s` and LLM self-consistency score `u`), 
 │   └── tests/                         ← pipeline test suite
 ├── tests/                             ← top-level integration tests
 ├── data/                              ← CLEF-TAR benchmark data
-├── code/                              ← auxiliary scripts
 └── documenation/                      ← thesis-related documents
 ```
 
